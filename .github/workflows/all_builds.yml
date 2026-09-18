@@ -39,7 +39,6 @@ concurrency:
 
 jobs:
   build:
-    # Windows 10 with latest image
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
     strategy:
@@ -76,16 +75,6 @@ jobs:
             alt-rust-arch: none
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
-          # TODO: move into its own workflow
-          # - name: "🐧 Linux Editor with sanitizers"
-          #   os: "ubuntu-24.04"
-          #   id: linux-sanitizers
-          #   platform: linux
-          #   target: editor
-          #   sconsflags: dev_build=yes debug_symbols=no tests=yes use_asan=yes use_ubsan=yes linker=gold
-          #   bin: ./bin/godot.linuxbsd.editor.x86_64.san
-
-          # For testing the template builds
           - name: "🐧 Linux Template Debug"
             os: "ubuntu-22.04"
             id: linux-template-debug
@@ -135,6 +124,16 @@ jobs:
             alt-rust-arch: aarch64-apple-darwin
             sconsflags: production=yes debug_symbols=no optimize=size use_lto=yes use_volk=no vulkan=yes
             bin: ./bin/godot.macos.editor.arm64
+
+          - name: "📱 iOS Template Release"
+            os: "macos-latest"
+            id: ios-template
+            platform: ios
+            target: template_release
+            rust-arch: aarch64-apple-ios
+            alt-rust-arch: none
+            sconsflags: production=yes debug_symbols=no optimize=size use_lto=yes arch=arm64
+            bin: ./bin/godot.ios.template_release.arm64
 
     steps:
       - name: Set git to use LF
@@ -202,21 +201,8 @@ jobs:
             echo "ANGLE_ENABLED=no" >> "$GITHUB_OUTPUT"
           fi
 
-      # TODO: Enable this when we figure out how to resolve linking issues with AccessKit; getting duplicate symbols for `_rust_eh_personality`.
-      # - name: Download pre-built AccessKit
-      #   shell: sh
-      #   id: accesskit-sdk
-      #   if: matrix.platform == 'macos' || matrix.platform == 'windows' || matrix.platform == 'linux'
-      #   run: |
-      #     if python ./misc/scripts/install_accesskit.py; then
-      #       echo "ACCESSKIT_ENABLED=yes" >> "$GITHUB_OUTPUT"
-      #     else
-      #       echo "::warning::AccessKit SDK installation failed, building without AccessKit support."
-      #       echo "ACCESSKIT_ENABLED=no" >> "$GITHUB_OUTPUT"
-      #     fi
-
       - name: Setup Vulkan SDK
-        if: matrix.platform == 'macos'
+        if: matrix.platform == 'macos' || matrix.platform == 'ios'
         run: |
           sh misc/scripts/install_vulkan_sdk_macos.sh
 
@@ -278,14 +264,13 @@ jobs:
 
       - name: Compile godot export template for arm64
         uses: ./.github/actions/godot-build
-        if: (matrix.platform == 'macos' || matrix.platform == 'android') && (matrix.target == 'template_release' || matrix.target == 'template_debug')
+        if: (matrix.platform == 'macos' || matrix.platform == 'android' || matrix.platform == 'ios') && (matrix.target == 'template_release' || matrix.target == 'template_debug')
         with:
           scons-flags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ env.SCONSFLAGS_TEMPLATE }} ${{ matrix.sconsflags }} generate_bundle=yes
           platform: ${{ matrix.platform }}
           target: ${{ matrix.target }}
 
       - name: Save Godot build cache
-        # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
         uses: ./.github/actions/godot-cache-save
         with:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
@@ -297,7 +282,6 @@ jobs:
 
       - name: Make macOS template
         if: matrix.platform == 'macos' && matrix.target == 'template_release'
-        # generate_bundle lipos the template binaries and generates the bundle, so we don't have to do anything here
         run: |
           cd bin/
           mv godot_macos.zip macos.zip
@@ -311,14 +295,6 @@ jobs:
           name: GDRE_tools-${{ matrix.target }}-${{ matrix.platform }}
           path: ${{github.workspace}}/bin/*
           retention-days: 90
-
-      - name: run tests
-        continue-on-error: true
-        if: matrix.target == 'editor' && matrix.platform == 'linux'
-        shell: bash
-        run: |
-          ${{matrix.bin}} --headless --test --force-colors "--test-case=[GDSDecomp]*"
-
 
   test:
     needs: build
@@ -386,6 +362,7 @@ jobs:
         shell: bash
         run: |
           ${{matrix.bin}} --headless --test --force-colors "--test-case=[GDSDecomp]*"
+
   export:
     needs: build
     runs-on: ${{ matrix.os }}
@@ -429,6 +406,16 @@ jobs:
             export-preset: "macOS"
             export-name: .export/gdre_tools.universal.zip
             debug: false
+
+          - name: "📱 iOS"
+            os: "macos-latest"
+            editor: macos
+            platform: ios
+            command-export: ${env:GITHUB_WORKSPACE}/bin/godot.macos.editor.arm64
+            export-preset: "iOS"
+            export-name: .export/gdre_tools.ipa
+            debug: false
+
     steps:
       - name: checkout-gdsdecomp
         uses: actions/checkout@v4
@@ -442,7 +429,6 @@ jobs:
           mkdir -p bin/
           mkdir -p .github/actions/
           cp -R modules/gdsdecomp/.github/actions/* .github/actions/
-
 
       - name: Download GDRE_tools artifacts
         uses: actions/download-artifact@v4
@@ -538,6 +524,11 @@ jobs:
         with:
           name: GDRE_tools-standalone-android
           path: artifacts/android
+      - name: Download iOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: GDRE_tools-standalone-ios
+          path: artifacts/ios
       - name: Zip artifacts
         run: |
           ls -la artifacts/*
@@ -550,6 +541,8 @@ jobs:
           zip -r9  "../GDRE_tools-${{ github.ref_name }}-linux.zip" *
           cd ../android
           mv gdre_tools.apk "../GDRE_tools-${{ github.ref_name }}-android.apk"
+          cd ../ios
+          zip -r9 "../GDRE_tools-${{ github.ref_name }}-ios.zip" *
       - name: Release
         uses: nikitalita/action-gh-release@v1.0
         with:
@@ -558,3 +551,4 @@ jobs:
             artifacts/GDRE_tools-${{ github.ref_name }}-macos.zip
             artifacts/GDRE_tools-${{ github.ref_name }}-linux.zip
             artifacts/GDRE_tools-${{ github.ref_name }}-android.apk
+            artifacts/GDRE_tools-${{ github.ref_name }}-ios.zip
