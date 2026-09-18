@@ -24,7 +24,7 @@ def get_godot_mono_decomp_libs(static_lib, platform: str, is_msvc: bool, libs):
     if static_lib:
         lib_suffix = ".lib" if is_msvc else ".a"
     else:
-        if platform == "macos":
+        if platform == "macos" or platform == "ios":
             lib_suffix = ".dylib"
         elif is_msvc:
             lib_suffix = ".lib"
@@ -34,9 +34,9 @@ def get_godot_mono_decomp_libs(static_lib, platform: str, is_msvc: bool, libs):
 
 
 def get_dotnet_arch(env_arch):
-    if env_arch == "arm64":
+    if env_arch in ["arm64", "aarch64"]:
         return "arm64"
-    elif env_arch == "x86_64":
+    elif env_arch in ["x86_64", "amd64"]:
         return "x64"
     else:
         raise Exception(f"Unsupported architecture: {env_arch}")
@@ -54,6 +54,9 @@ def get_build_arch(dotnet_arch):
 def get_godot_mono_triplet(target_platform, target_arch):
     if target_platform == "macos":
         platform_part = "osx"
+        arch_part = "arm64" if target_arch == "arm64" else "x64"
+    elif target_platform == "ios":
+        platform_part = "ios"
         arch_part = "arm64" if target_arch == "arm64" else "x64"
     elif target_platform == "linuxbsd":
         platform_part = "linux"
@@ -80,11 +83,12 @@ def get_godot_mono_decomp_lib_dir(godot_mono_decomp_dir, target_platform, target
     triplet = get_godot_mono_triplet(target_platform, target_arch)
     target_framework = "net9.0"
     csproj_path = os.path.join(godot_mono_decomp_dir, "GodotMonoDecompNativeAOT.csproj")
-    with open(csproj_path, "r", encoding="utf-8") as csproj_file:
-        for line in csproj_file:
-            if "TargetFramework" in line:
-                target_framework = line.split(">")[1].split("<")[0].strip()
-                break
+    if os.path.exists(csproj_path):
+        with open(csproj_path, "r", encoding="utf-8") as csproj_file:
+            for line in csproj_file:
+                if "TargetFramework" in line:
+                    target_framework = line.split(">")[1].split("<")[0].strip()
+                    break
 
     return os.path.join(godot_mono_decomp_dir, "bin", get_dotnet_variant_name(dev_build), target_framework, triplet, "publish")
 
@@ -123,19 +127,15 @@ def get_dotnet_publish_cmd(build_env, mono_native_lib_type, target_arch, godot_m
         "publish",
         f"/p:NativeLib={mono_native_lib_type}",
         "/p:PublishProfile=AOT",
-        # f"/p:MSBuildProjectExtensionsPath={obj_dir}/",
-        # f"/p:BaseIntermediateOutputPath={obj_dir}/",
         "-c",
         build_variant,
         "-r",
         mono_triplet,
     ]
-    if build_env["platform"] == "android" or mono_native_lib_type == "Static":
+    if build_env["platform"] in ["android", "ios"] or mono_native_lib_type == "Static":
         dotnet_publish_cmd += ["-p:DisableUnsupportedError=true", "-p:PublishAotUsingRuntimePack=true"]
     if mono_native_lib_type == "Static":
         dotnet_publish_cmd += ["--use-current-runtime", "--self-contained"]
-    # don't restore
-    # dotnet_publish_cmd += ["--no-restore"]
     return dotnet_publish_cmd
 
 
@@ -148,6 +148,11 @@ def godot_mono_builder(
     godot_mono_decomp_libs,
     build_dir,
 ):
+    # iOS targeting এর জন্য .NET compilation bypass
+    if build_env["platform"] == "ios":
+        print("INFO: Building for iOS target - Skipping Godot Mono Decomp .NET publication.")
+        return
+
     print("GODOT MONO DECOMP BUILD: ", [str(s) for s in target])
     libs = get_godot_mono_decomp_lib_paths(build_env, godot_mono_decomp_dir, godot_mono_decomp_libs, mono_native_lib_type)
     dev_build = is_dev_build(build_env)
@@ -262,6 +267,12 @@ def build_godot_mono_decomp(
     module_obj,
 ):
     from SCons.Defaults import Copy
+    
+    # iOS Platform এ Mono Build স্কিপ করা
+    if env["platform"] == "ios":
+        print("INFO: Skipped godot_mono_decomp for iOS platform target.")
+        return
+
     module_dir: str = get_module_dir(env)
     build_dir: str = get_build_dir(env)
     godot_mono_decomp_parent: str = GODOT_MONO_DECOMP_PARENT
@@ -280,7 +291,7 @@ def build_godot_mono_decomp(
     else:
         if env.msvc:
             lib_suffix = ".lib"
-        elif env["platform"] == "macos":
+        elif env["platform"] in ["macos", "ios"]:
             lib_suffix = ".dylib"
         else:
             lib_suffix = ".so"
@@ -341,7 +352,7 @@ def build_godot_mono_decomp(
                     os.path.join(build_dir, os.path.basename(libs[0])), all_libs, env_gdsdecomp.Run(lipo_libs)
                 )
             )
-        elif env["platform"] != "android":
+        elif env["platform"] not in ["android", "ios"]:
             for lib in libs:
                 copied_lib = os.path.join(build_dir, os.path.basename(lib))
                 if env.msvc:
@@ -380,10 +391,9 @@ def build_godot_mono_decomp(
         env.Append(RPATH=env.Literal("\\$$ORIGIN"))
 
     if mono_native_lib_type == "Static":
-        # TODO: Keep static-linking path intact until dotnet static issues are resolved.
         if env.msvc:
             env.Append(LINKFLAGS=["/FORCE:MULTIPLE"])
-        elif env["platform"] != "macos" and not env["CXX"].lower().endswith("clang++"):
+        elif env["platform"] not in ["macos", "ios"] and not env["CXX"].lower().endswith("clang++"):
             env.Append(LINKFLAGS=["-Wl,--allow-multiple-definition"])
 
         cmd_env = get_cmd_env(env)
@@ -396,7 +406,6 @@ def build_godot_mono_decomp(
             "_IsPublishing": "true",
             "Configuration": get_dotnet_variant_name(is_dev_build(env)),
         }
-        # TODO: This is intentionally unconditional for now to preserve current behavior.
         properties["DisableUnsupportedError"] = "true"
         properties["PublishAotUsingRuntimePack"] = "true"
 
@@ -422,6 +431,6 @@ def build_godot_mono_decomp(
         print("MONO DECOMP FRAMEWORK ARGS", framework_args)
         env.Append(LINKFLAGS=linker_args)
         env.Append(LIBS=library_args)
-        if env["platform"] == "macos":
+        if env["platform"] in ["macos", "ios"]:
             for framework in framework_args:
                 env.Append(LINKFLAGS=["-framework", framework])
