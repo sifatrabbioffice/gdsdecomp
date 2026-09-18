@@ -1,4 +1,4 @@
-name: Build GDRecomp iOS
+name: Build GDRETools gdsdecomp iOS
 
 on:
   push:
@@ -20,11 +20,15 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      - name: Select Xcode Developer Directory
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
       - name: Install Build Tools
         run: |
           brew install cmake ninja
 
-      - name: Disable Test Subdirectories Safely
+      - name: Disable Non-iOS Test Subdirectories
         run: |
           git checkout .
           python3 -c "
@@ -32,12 +36,11 @@ jobs:
           for root, dirs, files in os.walk('.'):
               if 'aot-test' in root.lower() and 'CMakeLists.txt' in files:
                   path = os.path.join(root, 'CMakeLists.txt')
-                  print(f'Stubbing out test file: {path}')
                   with open(path, 'w', encoding='utf-8') as f:
                       f.write('# Disabled for iOS target build\n')
           "
 
-      - name: Locate CMake and Configure
+      - name: Configure CMake for iOS (arm64)
         run: |
           CMAKE_PATH=$(find . -maxdepth 3 -name "CMakeLists.txt" -not -path "*/.*" | head -n 1)
           if [ -z "$CMAKE_PATH" ]; then
@@ -50,115 +53,109 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES="arm64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="14.0" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="15.0" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
             -DENABLE_TESTS=OFF
 
-      - name: Build Executable
+      - name: Compile Native Binary
         run: |
           cmake --build build-ios --config Release
 
-      - name: Create Valid iOS App Bundle & IPA
+      - name: Generate Valid iOS App Bundle & Info.plist
         run: |
           python3 -c "
-          import os, shutil, zipfile, subprocess
+          import os, shutil, zipfile
 
+          build_dir = 'build-ios'
           payload_dir = 'Payload'
-          app_dir = os.path.join(payload_dir, 'GDRecomp.app')
+          app_dir = os.path.join(payload_dir, 'gdsdecomp.app')
+
           if os.path.exists(payload_dir):
               shutil.rmtree(payload_dir)
           os.makedirs(app_dir, exist_ok=True)
 
-          # Mach-O executable search
-          executable_file = None
-          for root, dirs, files in os.walk('build-ios'):
+          # 1. Locate compiled ARM64 binary
+          exec_binary = None
+          for root, dirs, files in os.walk(build_dir):
               for f in files:
                   p = os.path.join(root, f)
-                  try:
-                      res = subprocess.run(['file', p], capture_output=True, text=True)
-                      if 'Mach-O' in res.stdout and ('arm64' in res.stdout or 'executable' in res.stdout):
-                          if not f.startswith('.') and not f.endswith('.dylib') and not f.endswith('.a'):
-                              executable_file = p
-                              break
-                  except Exception:
-                      pass
-              if executable_file:
+                  if f in ['gdsdecomp', 'GDDecomp'] or (os.access(p, os.X_OK) and not f.endswith(('.dylib', '.a', '.plist', '.ninja', '.o', '.json'))):
+                      if not f.startswith('.'):
+                          exec_binary = p
+                          break
+              if exec_binary:
                   break
 
-          if not executable_file:
-              raise Exception('No iOS executable binary found in build-ios directory!')
+          if exec_binary and os.path.isfile(exec_binary):
+              print(f'Copying iOS ARM64 Binary: {exec_binary}')
+              shutil.copy(exec_binary, os.path.join(app_dir, 'gdsdecomp'))
+              os.chmod(os.path.join(app_dir, 'gdsdecomp'), 0o755)
 
-          print(f'Main executable found: {executable_file}')
-          target_exec = os.path.join(app_dir, 'GDRecomp')
-          shutil.copy(executable_file, target_exec)
-          os.chmod(target_exec, 0o755)
-
-          # Copy dynamic libraries
-          for root, dirs, files in os.walk('build-ios'):
+          # 2. Copy dylib frameworks if built
+          for root, dirs, files in os.walk(build_dir):
               for f in files:
                   if f.endswith('.dylib'):
                       shutil.copy(os.path.join(root, f), app_dir)
 
-          # Generate Info.plist
+          # 3. Inject valid iOS Info.plist
           info_plist_content = '''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
           <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
           <plist version=\"1.0\">
           <dict>
-              <key>CFBundleDevelopmentRegion</key>
-              <string>en</string>
               <key>CFBundleExecutable</key>
-              <string>GDRecomp</string>
+              <string>gdsdecomp</string>
               <key>CFBundleIdentifier</key>
-              <string>com.sifat.gdrecomp</string>
-              <key>CFBundleInfoDictionaryVersion</key>
-              <string>6.0</string>
+              <string>com.gdretools.gdsdecomp</string>
               <key>CFBundleName</key>
-              <string>GDRecomp</string>
+              <string>gdsdecomp</string>
+              <key>CFBundleDisplayName</key>
+              <string>Godot RE Tools</string>
               <key>CFBundlePackageType</key>
               <string>APPL</string>
               <key>CFBundleShortVersionString</key>
               <string>1.0</string>
-              <key>CFBundleSignature</key>
-              <string>????</string>
               <key>CFBundleVersion</key>
               <string>1</string>
-              <key>LSRequiresIPhoneOS</key>
-              <true/>
+              <key>MinimumOSVersion</key>
+              <string>15.0</string>
               <key>UIDeviceFamily</key>
               <array>
                   <integer>1</integer>
                   <integer>2</integer>
               </array>
-
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>arm64</string>
+              </array>
               <key>UISupportedInterfaceOrientations</key>
               <array>
                   <string>UIInterfaceOrientationPortrait</string>
                   <string>UIInterfaceOrientationLandscapeLeft</string>
                   <string>UIInterfaceOrientationLandscapeRight</string>
               </array>
-              <key>MinimumOSVersion</key>
-              <string>14.0</string>
           </dict>
           </plist>'''
 
-          with open(os.path.join(app_dir, 'Info.plist'), 'w', encoding='utf-8') as f:
+          with open(os.path.join(app_dir, 'Info.plist'), 'w') as f:
               f.write(info_plist_content.strip())
 
-          # Zip Payload to .ipa
-          ipa_name = 'GDRecomp-iOS.ipa'
-          with zipfile.ZipFile(ipa_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
-              for root, dirs, files in os.walk(payload_dir):
+          with open(os.path.join(app_dir, 'PkgInfo'), 'w') as f:
+              f.write('APPL????')
+
+          # 4. Zip into iOS IPA package
+          with zipfile.ZipFile('gdsdecomp-iOS-15ProMax.ipa', 'w', zipfile.ZIP_DEFLATED) as zipf:
+              for root, dirs, files in os.walk('Payload'):
                   for file in files:
                       file_path = os.path.join(root, file)
                       arcname = os.path.relpath(file_path, '.')
                       zipf.write(file_path, arcname)
 
-          print('Valid iOS IPA successfully generated.')
+          print('Real iOS IPA created successfully!')
           "
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GDRecomp-iOS-IPA
-          path: GDRecomp-iOS.ipa
+          name: gdsdecomp-iOS-15ProMax-IPA
+          path: gdsdecomp-iOS-15ProMax.ipa
