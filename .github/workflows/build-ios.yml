@@ -26,8 +26,21 @@ jobs:
 
       - name: Disable Test Subdirectories
         run: |
-          find . -name "CMakeLists.txt" -exec sed -i '' -E 's/(add_subdirectory\(.*aot-test.*\)/# \1/g' {} +
-          find . -name "CMakeLists.txt" -exec sed -i '' -E 's/(add_subdirectory\(.*test.*\)/# \1/g' {} + || true
+          python3 -c "
+          import os
+          for root, dirs, files in os.walk('.'):
+              for file in files:
+                  if file == 'CMakeLists.txt':
+                      path = os.path.join(root, file)
+                      with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                          lines = f.readlines()
+                      with open(path, 'w', encoding='utf-8') as f:
+                          for line in lines:
+                              if 'aot-test' in line or 'GodotMonoDecompNativeAOT' in line:
+                                  f.write('# ' + line)
+                              else:
+                                  f.write(line)
+          "
 
       - name: Locate CMake and Configure
         run: |
