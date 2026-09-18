@@ -60,15 +60,40 @@ jobs:
 
       - name: Package .app to .ipa
         run: |
-          mkdir -p Payload
-          APP_PATH=$(find build-ios -name "*.app" -type d | head -n 1)
-          if [ -n "$APP_PATH" ]; then
-            cp -r "$APP_PATH" Payload/
-          else
-            mkdir -p Payload/GDRecomp.app
-            find build-ios -maxdepth 2 -type f -executable -exec cp {} Payload/GDRecomp.app/ \;
-          fi
-          zip -r GDRecomp-iOS.ipa Payload
+          python3 -c "
+          import os, shutil, zipfile
+
+          os.makedirs('Payload', exist_ok=True)
+          app_path = None
+          for root, dirs, files in os.walk('build-ios'):
+              for d in dirs:
+                  if d.endswith('.app'):
+                      app_path = os.path.join(root, d)
+                      break
+              if app_path:
+                  break
+
+          if app_path:
+              print(f'Found app bundle: {app_path}')
+              shutil.copytree(app_path, os.path.join('Payload', os.path.basename(app_path)), dirs_exist_ok=True)
+          else:
+              print('No app bundle found. Packing binary files...')
+              target_dir = os.path.join('Payload', 'GDRecomp.app')
+              os.makedirs(target_dir, exist_ok=True)
+              for root, dirs, files in os.walk('build-ios'):
+                  for f in files:
+                      p = os.path.join(root, f)
+                      if os.access(p, os.X_OK) and not f.startswith('.'):
+                          shutil.copy(p, target_dir)
+
+          with zipfile.ZipFile('GDRecomp-iOS.ipa', 'w', zipfile.ZIP_DEFLATED) as zipf:
+              for root, dirs, files in os.walk('Payload'):
+                  for file in files:
+                      file_path = os.path.join(root, file)
+                      arcname = os.path.relpath(file_path, '.')
+                      zipf.write(file_path, arcname)
+          print('Successfully created GDRecomp-iOS.ipa')
+          "
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
