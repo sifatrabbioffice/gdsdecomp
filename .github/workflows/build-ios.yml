@@ -50,6 +50,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="14.0" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
             -DENABLE_TESTS=OFF
@@ -58,10 +59,10 @@ jobs:
         run: |
           cmake --build build-ios --config Release
 
-      - name: Construct Valid iOS App Bundle & IPA
+      - name: Create Valid iOS App Bundle & IPA
         run: |
           python3 -c "
-          import os, shutil, zipfile
+          import os, shutil, zipfile, subprocess
 
           payload_dir = 'Payload'
           app_dir = os.path.join(payload_dir, 'GDRecomp.app')
@@ -69,32 +70,37 @@ jobs:
               shutil.rmtree(payload_dir)
           os.makedirs(app_dir, exist_ok=True)
 
-          # 1. Locate main executable binary
-          binary_path = None
+          # Mach-O executable search
+          executable_file = None
           for root, dirs, files in os.walk('build-ios'):
               for f in files:
                   p = os.path.join(root, f)
-                  if os.access(p, os.X_OK) and not f.startswith('.') and not f.endswith(('.o', '.dylib', '.a', '.ninja', '.cmake', '.txt', '.json', '.dll', '.sh')):
-                      binary_path = p
-                      break
-              if binary_path:
+                  try:
+                      res = subprocess.run(['file', p], capture_output=True, text=True)
+                      if 'Mach-O' in res.stdout and ('arm64' in res.stdout or 'executable' in res.stdout):
+                          if not f.startswith('.') and not f.endswith('.dylib') and not f.endswith('.a'):
+                              executable_file = p
+                              break
+                  except Exception:
+                      pass
+              if executable_file:
                   break
 
-          if not binary_path:
-              raise RuntimeError('Compiled iOS executable binary khunje pawa jayni!')
+          if not executable_file:
+              raise Exception('No iOS executable binary found in build-ios directory!')
 
-          print(f'Executable binary found: {binary_path}')
-          dest_binary = os.path.join(app_dir, 'GDRecomp')
-          shutil.copy(binary_path, dest_binary)
-          os.chmod(dest_binary, 0o755)
+          print(f'Main executable found: {executable_file}')
+          target_exec = os.path.join(app_dir, 'GDRecomp')
+          shutil.copy(executable_file, target_exec)
+          os.chmod(target_exec, 0o755)
 
-          # 2. Copy dylib dependencies if available
+          # Copy dynamic libraries
           for root, dirs, files in os.walk('build-ios'):
               for f in files:
                   if f.endswith('.dylib'):
                       shutil.copy(os.path.join(root, f), app_dir)
 
-          # 3. Generate valid iOS Info.plist
+          # Generate Info.plist
           info_plist_content = '''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
           <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
           <plist version=\"1.0\">
@@ -113,37 +119,42 @@ jobs:
               <string>APPL</string>
               <key>CFBundleShortVersionString</key>
               <string>1.0</string>
+              <key>CFBundleSignature</key>
+              <string>????</string>
               <key>CFBundleVersion</key>
               <string>1</string>
               <key>LSRequiresIPhoneOS</key>
               <true/>
-              <key>MinimumOSVersion</key>
-              <string>14.0</string>
-              <key>UIRequiredDeviceCapabilities</key>
+              <key>UIDeviceFamily</key>
               <array>
-                  <string>arm64</string>
+                  <integer>1</integer>
+                  <integer>2</integer>
               </array>
+
               <key>UISupportedInterfaceOrientations</key>
               <array>
                   <string>UIInterfaceOrientationPortrait</string>
                   <string>UIInterfaceOrientationLandscapeLeft</string>
                   <string>UIInterfaceOrientationLandscapeRight</string>
               </array>
+              <key>MinimumOSVersion</key>
+              <string>14.0</string>
           </dict>
           </plist>'''
 
           with open(os.path.join(app_dir, 'Info.plist'), 'w', encoding='utf-8') as f:
-              f.write(info_plist_content)
+              f.write(info_plist_content.strip())
 
-          # 4. Create IPA archive
-          with zipfile.ZipFile('GDRecomp-iOS.ipa', 'w', zipfile.ZIP_DEFLATED) as zipf:
-              for root, dirs, files in os.walk('Payload'):
+          # Zip Payload to .ipa
+          ipa_name = 'GDRecomp-iOS.ipa'
+          with zipfile.ZipFile(ipa_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+              for root, dirs, files in os.walk(payload_dir):
                   for file in files:
                       file_path = os.path.join(root, file)
                       arcname = os.path.relpath(file_path, '.')
                       zipf.write(file_path, arcname)
 
-          print('Successfully generated valid iOS App Bundle & IPA!')
+          print('Valid iOS IPA successfully generated.')
           "
 
       - name: Upload Artifact
