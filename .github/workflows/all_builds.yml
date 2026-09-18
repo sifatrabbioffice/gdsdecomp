@@ -23,7 +23,6 @@ on:
       - ".github/workflows/all_builds.yml"
 
 # Global Settings
-# SCONS_CACHE for windows must be set in the build environment
 env:
   GODOT_REPOSITORY: nikitalita/godot
   GODOT_MAIN_SYNC_REF: gdre-wb-f964fa714f5
@@ -104,7 +103,7 @@ jobs:
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
           - name: "📱 iOS Template Release (Metal/Unsigned IPA)"
-            os: "macos-latest"
+            os: "macos-15"
             id: ios-template
             platform: ios
             target: template_release
@@ -156,6 +155,28 @@ jobs:
         shell: bash
         run: |
           cp -R modules/gdsdecomp/.github/actions/* .github/actions/
+
+      - name: Select Xcode 16
+        if: matrix.platform == 'ios' || matrix.platform == 'macos'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode_16.0.app || true
+          clang --version
+
+      - name: Patch gdsdecomp mono_decomp for iOS
+        if: matrix.platform == 'ios'
+        run: |
+          python3 -c '
+          path = "modules/gdsdecomp/build/mono_decomp.py"
+          with open(path, "r") as f:
+              code = f.read()
+          if "def build_godot_mono_decomp" in code:
+              code = code.replace(
+                  "def build_godot_mono_decomp(env, env_gdsdecomp, module_obj):",
+                  "def build_godot_mono_decomp(env, env_gdsdecomp, module_obj):\n    if env.get(\"platform\") == \"ios\": return"
+              )
+          with open(path, "w") as f:
+              f.write(code)
+          '
 
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
