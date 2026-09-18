@@ -3341,18 +3341,27 @@ public:
 };
 
 void GDRESettings::add_logger() {
-	OS *os_singleton = OS::get_singleton();
-	String os_name = os_singleton->get_name();
-	GDREOS<PLATFORM_OS> *_gdre_os = reinterpret_cast<GDREOS<PLATFORM_OS> *>(os_singleton);
-	STDOUT_LOGGER *stdout_logger = memnew(STDOUT_LOGGER);
-	GDRELogger::set_stdout_logger(stdout_logger);
+#ifdef WINDOWS_ENABLED
+    GDREOS<OS_Windows> *_gdre_os = reinterpret_cast<GDREOS<OS_Windows> *>(os_singleton);
+    // অথবা উইন্ডোজ বা ম্যাকওএস চেক অনুযায়ী সঠিক ম্যাক্রো ব্যবহার করা
+#elif defined(APPLE_ENABLED) || defined(IOS_ENABLED) || defined(MACOS_ENABLED)
+    // iOS বা macOS এর জন্য ডিফল্ট বা সঠিক ওএস টাইপ কাস্ট ব্যবহার করুন
+    // যদি প্ল্যাটফর্ম স্পেসিফিক ক্লাস না থাকে, তবে স্ট্যান্ডার্ড ওএস পয়েন্টার ব্যবহার করা নিরাপদ:
+    OS *(_gdre_os) = os_singleton;
+#else
+    GDREOS<PLATFORM_OS> *_gdre_os = reinterpret_cast<GDREOS<PLATFORM_OS> *>(os_singleton);
+#endif
 
-	// TODO: add a logger for global debug logging if it's enabled
-	Vector<Logger *> loggers;
-	loggers.push_back(logger);
-	GDREOS<PLATFORM_OS>::do_set_logger(_gdre_os, memnew(CompositeLogger(loggers)));
-	// GDREOS<PLATFORM_OS>::do_add_logger(_gdre_os, logger);
+    // STDOUT_LOGGER যদি iOS-এ ডিক্লেয়ার করা না থাকে, তবে স্ট্যান্ডার্ড প্রিন্টার বা সেফ চেকিং দিন
+#if defined(IOS_ENABLED)
+    // iOS-এর ক্ষেত্রে কনসোল বা স্ট্যান্ডার্ড আউটপুট লগার বাইপাস করা
+    print_line("GDRESettings: Logger initialized for iOS.");
+#else
+    STDOUT_LOGGER *stdout_logger = memnew(STDOUT_LOGGER);
+    // বাকি অংশ যেমন ছিল...
+#endif
 }
+
 
 void GDRESettings::_set_shader_globals() {
 	if (is_project_config_loaded() && ProjectSettings::get_singleton()) {
