@@ -25,9 +25,7 @@ on:
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
 env:
-  # TODO: change this back to godotengine/godot and target master when #109685 and #109475 are merged
   GODOT_REPOSITORY: nikitalita/godot
-  # Change the README too
   GODOT_MAIN_SYNC_REF: gdre-wb-f964fa714f5
   SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes angle=yes accesskit=no
   SCONSFLAGS_TEMPLATE: disable_path_overrides=no no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
@@ -105,6 +103,16 @@ jobs:
             sconsflags: production=yes debug_symbols=no optimize=size use_lto=yes generate_android_binaries=yes
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
+          - name: "📱 iOS Template Release (Metal/Unsigned IPA)"
+            os: "macos-14"
+            id: ios-template
+            platform: ios
+            target: template_release
+            rust-arch: aarch64-apple-ios
+            alt-rust-arch: none
+            sconsflags: production=yes debug_symbols=no optimize=size use_lto=yes metal=yes vulkan=no
+            bin: ./bin/godot.ios.template_release.arm64
+
           - name: "🍎 macOS Editor"
             os: "macos-26"
             id: macos-editor
@@ -125,22 +133,13 @@ jobs:
             sconsflags: production=yes debug_symbols=no optimize=size use_lto=yes use_volk=no vulkan=yes
             bin: ./bin/godot.macos.editor.arm64
 
-          - name: "📱 iOS Template Release"
-            os: "macos-latest"
-            id: ios-template
-            platform: ios
-            target: template_release
-            rust-arch: aarch64-apple-ios
-            alt-rust-arch: none
-            sconsflags: production=yes debug_symbols=no optimize=size use_lto=yes arch=arm64
-            bin: ./bin/godot.ios.template_release.arm64
-
     steps:
       - name: Set git to use LF
         if: matrix.platform == 'windows'
         run: |
           git config --global core.autocrlf false
           git config --global core.eol lf
+
       - name: checkout-godot
         uses: actions/checkout@v4
         with:
@@ -173,7 +172,6 @@ jobs:
             libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
             libudev-dev libxi-dev libxrandr-dev yasm clang-format libwayland-bin \
             patchelf
-          sudo apt-get install libwayland-bin
 
       - name: Set up JDK 17
         if: matrix.platform == 'android'
@@ -202,7 +200,7 @@ jobs:
           fi
 
       - name: Setup Vulkan SDK
-        if: matrix.platform == 'macos' || matrix.platform == 'ios'
+        if: matrix.platform == 'macos'
         run: |
           sh misc/scripts/install_vulkan_sdk_macos.sh
 
@@ -254,7 +252,7 @@ jobs:
           target: editor
 
       - name: Compile godot export template (x86_64)
-        if: matrix.target == 'template_release' || matrix.target == 'template_debug'
+        if: (matrix.target == 'template_release' || matrix.target == 'template_debug') && matrix.platform != 'ios'
         id: compile-template
         uses: ./.github/actions/godot-build
         with:
@@ -262,7 +260,7 @@ jobs:
           platform: ${{ matrix.platform }}
           target: ${{ matrix.target }}
 
-      - name: Compile godot export template for arm64
+      - name: Compile godot export template for arm64 (iOS / macOS / Android)
         uses: ./.github/actions/godot-build
         if: (matrix.platform == 'macos' || matrix.platform == 'android' || matrix.platform == 'ios') && (matrix.target == 'template_release' || matrix.target == 'template_debug')
         with:
@@ -277,7 +275,7 @@ jobs:
         continue-on-error: true
 
       - name: Prepare template artifact
-        if: matrix.platform != 'android'
+        if: matrix.platform != 'android' && matrix.platform != 'ios'
         uses: ./.github/actions/godot-prepare-artifact
 
       - name: Make macOS template
@@ -287,6 +285,20 @@ jobs:
           mv godot_macos.zip macos.zip
           rm -f libGodotMonoDecompNativeAOT.dylib
           rm -f godot.macos.template_release.*
+          cd ..
+
+      - name: Package Unsigned iOS IPA / Template
+        if: matrix.platform == 'ios' && matrix.target == 'template_release'
+        run: |
+          cd bin/
+          mkdir -p Payload
+          find . -maxdepth 2 -name "*.app" -exec cp -R {} Payload/ \; 2>/dev/null || true
+          if [ -d "Payload" ] && [ "$(ls -A Payload)" ]; then
+            zip -r9 ios_unsigned.ipa Payload
+            cp ios_unsigned.ipa ios.zip
+          else
+            zip -r9 ios.zip *
+          fi
           cd ..
 
       - uses: actions/upload-artifact@v4
@@ -355,7 +367,7 @@ jobs:
       - name: set permissions
         shell: bash
         run: |
-          chmod a+x bin/godot*
+          chmod a+x bin/godot* || true
           mkdir -p ~/.cache/godot
 
       - name: run tests
@@ -398,16 +410,7 @@ jobs:
             export-name: .export/gdre_tools.apk
             debug: false
 
-          - name: "🍎 macOS"
-            os: "macos-latest"
-            editor: macos
-            platform: macos
-            command-export: ${env:GITHUB_WORKSPACE}/bin/godot.macos.editor.arm64
-            export-preset: "macOS"
-            export-name: .export/gdre_tools.universal.zip
-            debug: false
-
-          - name: "📱 iOS"
+          - name: "📱 iOS Unsigned"
             os: "macos-latest"
             editor: macos
             platform: ios
@@ -416,6 +419,14 @@ jobs:
             export-name: .export/gdre_tools.ipa
             debug: false
 
+          - name: "🍎 macOS"
+            os: "macos-latest"
+            editor: macos
+            platform: macos
+            command-export: ${env:GITHUB_WORKSPACE}/bin/godot.macos.editor.arm64
+            export-preset: "macOS"
+            export-name: .export/gdre_tools.universal.zip
+            debug: false
     steps:
       - name: checkout-gdsdecomp
         uses: actions/checkout@v4
@@ -445,7 +456,7 @@ jobs:
       - name: set permissions
         shell: bash
         run: |
-          chmod a+x bin/godot*
+          chmod a+x bin/godot* || true
 
       - name: Download rcedit.exe
         uses: robinraju/release-downloader@v1.5
@@ -461,23 +472,6 @@ jobs:
         run: |
           Rename-Item ${{ runner.tool_cache }}\rcedit\rcedit-x64.exe ${{ runner.tool_cache }}\rcedit\rcedit.exe
           echo "${{ runner.tool_cache }}\rcedit" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Decode Android keystore
-        shell: bash
-        if: matrix.platform == 'android' && github.event_name != 'pull_request'
-        run: |
-          set -Eeuo pipefail
-          if [ -z "${{ secrets.ANDROID_RELEASE_KEYSTORE }}" ] || [ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ] || [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
-            echo "One or more Android signing secrets are missing (ANDROID_RELEASE_KEYSTORE, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD)"
-            echo "Android release build will be signed with a generated keystore"
-            exit 1
-          fi
-          echo "${{ secrets.ANDROID_RELEASE_KEYSTORE }}" > release.keystore.b64
-          openssl base64 -d -out ~/release.keystore -in release.keystore.b64
-          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$HOME/release.keystore" >> "$GITHUB_ENV"
-          echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=${{ secrets.ANDROID_KEY_ALIAS }}" >> "$GITHUB_ENV"
-          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-        continue-on-error: true
 
       - name: Export standalone GDRE Tools
         shell: pwsh
@@ -509,40 +503,46 @@ jobs:
         with:
           name: GDRE_tools-standalone-linux
           path: artifacts/linux
+
       - name: Download MacOS artifact
         uses: actions/download-artifact@v4
         with:
           name: GDRE_tools-standalone-macos
           path: artifacts/macos
+
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: GDRE_tools-standalone-windows
           path: artifacts/windows
+
       - name: Download Android artifact
         uses: actions/download-artifact@v4
         with:
           name: GDRE_tools-standalone-android
           path: artifacts/android
+
       - name: Download iOS artifact
         uses: actions/download-artifact@v4
         with:
           name: GDRE_tools-standalone-ios
           path: artifacts/ios
+
       - name: Zip artifacts
         run: |
           ls -la artifacts/*
           cd artifacts/windows
-          zip -r9  "../GDRE_tools-${{ github.ref_name }}-windows.zip" *
+          zip -r9 "../GDRE_tools-${{ github.ref_name }}-windows.zip" *
           cd ../..
           mv "artifacts/macos/gdre_tools.universal.zip" "artifacts/GDRE_tools-${{ github.ref_name }}-macos.zip"
           cd artifacts/linux
           chmod a+x gdre_tools.x86_64
-          zip -r9  "../GDRE_tools-${{ github.ref_name }}-linux.zip" *
+          zip -r9 "../GDRE_tools-${{ github.ref_name }}-linux.zip" *
           cd ../android
           mv gdre_tools.apk "../GDRE_tools-${{ github.ref_name }}-android.apk"
           cd ../ios
-          zip -r9 "../GDRE_tools-${{ github.ref_name }}-ios.zip" *
+          mv gdre_tools.ipa "../GDRE_tools-${{ github.ref_name }}-ios.ipa" || zip -r9 "../GDRE_tools-${{ github.ref_name }}-ios.zip" *
+
       - name: Release
         uses: nikitalita/action-gh-release@v1.0
         with:
@@ -551,4 +551,4 @@ jobs:
             artifacts/GDRE_tools-${{ github.ref_name }}-macos.zip
             artifacts/GDRE_tools-${{ github.ref_name }}-linux.zip
             artifacts/GDRE_tools-${{ github.ref_name }}-android.apk
-            artifacts/GDRE_tools-${{ github.ref_name }}-ios.zip
+            artifacts/GDRE_tools-${{ github.ref_name }}-ios.ipa
