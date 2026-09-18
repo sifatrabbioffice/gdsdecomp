@@ -24,22 +24,17 @@ jobs:
         run: |
           brew install cmake ninja
 
-      - name: Disable Test Subdirectories
+      - name: Disable Test Subdirectories Safely
         run: |
+          git checkout .
           python3 -c "
           import os
           for root, dirs, files in os.walk('.'):
-              for file in files:
-                  if file == 'CMakeLists.txt':
-                      path = os.path.join(root, file)
-                      with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                          lines = f.readlines()
-                      with open(path, 'w', encoding='utf-8') as f:
-                          for line in lines:
-                              if 'aot-test' in line or 'GodotMonoDecompNativeAOT' in line:
-                                  f.write('# ' + line)
-                              else:
-                                  f.write(line)
+              if 'aot-test' in root.lower() and 'CMakeLists.txt' in files:
+                  path = os.path.join(root, 'CMakeLists.txt')
+                  print(f'Stubbing out test file: {path}')
+                  with open(path, 'w', encoding='utf-8') as f:
+                      f.write('# Disabled for iOS target build\n')
           "
 
       - name: Locate CMake and Configure
