@@ -1,34 +1,50 @@
-name: Static Checks
-on: [push, pull_request]
+name: Build GDRecomp iOS
 
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  static-check-clang-format:
-    runs-on: "ubuntu-26.04"
-    name: Static checks (clang-format)
+  build-ios:
+    runs-on: macos-latest
+
     steps:
-    - name: checkout-gdsdecomp
-      uses: actions/checkout@v3
-      with:
-      # get all history
-        fetch-depth: 0
-    # If we're on another branch, make sure we have master
-    - run: |
-        git fetch --prune
-        echo $(git branch --all)
-        CURR_BRANCH=$(git branch --show-current)
-        if [ "$CURR_BRANCH" = "" ]; then
-          CURR_BRANCH=$(git rev-parse HEAD)
-        fi
-        if [ "$CURR_BRANCH" != "master" ]; then
-          git checkout --track origin/master
-          git checkout $CURR_BRANCH
-        fi
-        echo $(git branch --all)
-    - name: Install Linux deps
-      run: |
-        sudo apt-get update
-        sudo apt-get install clang-format-21
-        sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-21 100
-    - name: check clang_format
-      run: bash ./.scripts/clang_format.sh
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Tools
+        run: |
+          brew install cmake ninja
+
+      - name: Configure CMake for iOS Target
+        run: |
+          cmake -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Executable
+        run: |
+          cmake --build build-ios --config Release
+
+      - name: Package .app to .ipa
+        run: |
+          mkdir -p Payload/gdsdecomp.app
+          if [ -d "build-ios/gdsdecomp.app" ]; then
+            cp -r build-ios/gdsdecomp.app/* Payload/gdsdecomp.app/
+          elif [ -d "build-ios/GDRecomp.app" ]; then
+            cp -r build-ios/GDRecomp.app/* Payload/gdsdecomp.app/
+          else
+            find build-ios -maxdepth 2 -type f -executable -exec cp {} Payload/gdsdecomp.app/ \;
+          fi
+          zip -r GDRecomp-iOS.ipa Payload
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GDRecomp-iOS-IPA
+          path: GDRecomp-iOS.ipa
