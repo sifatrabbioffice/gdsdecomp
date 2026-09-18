@@ -233,9 +233,6 @@ GDRESettings::GDRESettings() {
 	print_line("new shader cache user dir: " + new_shader_cache_user_dir);
 	gdre::ensure_dir(new_shader_cache_user_dir);
 	ShaderRD::set_shader_cache_user_dir(new_shader_cache_user_dir);
-	// String old_gles3_shader_cache_dir = ShaderGLES3::get_shader_cache_dir();
-	// ShaderGLES3::set_shader_cache_dir(get_gdre_user_path().path_join("shader_cache"));
-
 #endif
 }
 
@@ -244,7 +241,6 @@ GDRESettings::~GDRESettings() {
 	remove_current_pack();
 	singleton = nullptr;
 	logger->_disable();
-	// logger doesn't get memdeleted because the OS singleton will do so
 }
 
 String GDRESettings::get_cwd() {
@@ -375,20 +371,16 @@ Error GDRESettings::load_dir(const String &p_path) {
 	if (err != OK) {
 		ERR_FAIL_V_MSG(err, "FATAL ERROR: Can't open directory!");
 	}
-	// Check for the existence of assets.sparsepck
 	String sparse_pck_path = p_path.path_join("assets.sparsepck");
 	if (FileAccess::exists(sparse_pck_path)) {
 		for (const auto &pack : packs) {
-			// skip it, it's already loaded
 			if (pack->pack_file == sparse_pck_path) {
 				return OK;
 			}
 		}
 		print_line("Checking if we need to load detected sparse pack...");
 		bool needs_load = false;
-		// We need to check if the project config is encrypted, if so, we need to load it.
 		if (pack_has_project_config()) {
-			// only 4.5 and up have these
 			String proj_config_path = p_path.path_join(has_path_loaded("res://project.binary") ? "project.binary" : "project.godot");
 			ProjectConfigLoader pcfg_loader;
 			if (pcfg_loader.load_cfb(proj_config_path, 4, 5) != OK) {
@@ -429,7 +421,6 @@ bool is_executable(const String &p_path) {
 } //namespace
 
 Error GDRESettings::load_pck(const String &p_path) {
-	// Check if the path is already loaded
 	for (const auto &pack : packs) {
 		if (pack->pack_file == p_path) {
 			return ERR_ALREADY_IN_USE;
@@ -481,7 +472,6 @@ String GDRESettings::sanitize_home_in_path(const String &p_path) {
 }
 namespace {
 bool is_godot_directory(const String &p_path) {
-	// check the directory for the presence of any of these files/dirs
 	static const Vector<String> godot_files = { "project.godot", "project.binary", ".godot", ".import", "engine.cfg", "engine.cfb" };
 	return gdre::directory_has_any_of(p_path, godot_files);
 }
@@ -500,15 +490,10 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 
 	size_t dir_count = 0;
 
-	// A common pattern for games is to have DLC releases come as additional pcks that override paths in the main pck
-	// We want to ensure that the main pck comes first
 	for (int i = 0; i < p_paths.size(); i++) {
 		String path = gdre::get_full_path(p_paths[i]);
 		String ext = path.get_extension().to_lower();
-		// directories come first
 		if (DirAccess::exists(path)) {
-			// This may be a ".app" bundle, so we need to check if it's a valid Godot app
-			// and if so, load the pck from inside the bundle
 			if (ext == "app") {
 				String resources_path = path.path_join("Contents").path_join("Resources");
 				if (!DirAccess::exists(resources_path)) {
@@ -524,7 +509,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 				String gamename = path.get_file().get_basename();
 				Vector<String> new_list;
 				for (auto &pck : list) {
-					// ensure it comes first
 					if (gamename.filenocasecmp_to(pck.get_file().get_basename()) == 0) {
 						main_pck_path = pck;
 					} else {
@@ -538,27 +522,20 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 				} else {
 					pck_files.append_array(new_list);
 				}
-				continue; // skip the rest of the loop
+				continue;
 			}
 			if (dir_count > 1) {
 				ERR_FAIL_V_MSG({}, "Cannot specify multiple directories!");
 			}
 			if (!is_godot_directory(path)) {
-				// TODO: Rethink this, this may be confusing to the user and cause issues
-				// auto list = gdre::get_files_at(path, { "*.pck" });
-				// ERR_CONTINUE_MSG(list.is_empty(), "Not a Godot directory: " + sanitize_home_in_path(path));
-				// pck_files.append_array(list);
-				// continue;
 				ERR_CONTINUE_MSG(true, "Not a Godot directory: " + sanitize_home_in_path(path));
 			}
 			dir_count++;
-			// Dir ALWAYS comes first
 			if (!main_pck_path.is_empty()) {
 				pck_files.push_back(main_pck_path);
 			}
 			main_pck_path = path;
 		} else if (ext == "apk" || ext == "ipa") {
-			// APKs and IPAs are always the "main" pck
 			if (!main_pck_path.is_empty()) {
 				main_pck_path = path;
 			} else {
@@ -566,7 +543,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 			}
 		} else if (is_executable(path)) {
 			if (GDREPackedSource::has_embedded_pck(path)) {
-				// embedded pck in exe, ensure that this pck comes first
 				if (main_pck_path.is_empty()) {
 					main_pck_path = path;
 				} else {
@@ -582,7 +558,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 			}
 			Error e = ERR_FILE_NOT_FOUND;
 			if (parent_path.get_file().to_lower() == "macos") {
-				// we want to get ../Resources
 				parent_path = parent_path.get_base_dir().path_join("Resources");
 				String pck_path = parent_path.path_join(path.get_file().get_basename() + ".pck");
 				if (FileAccess::exists(pck_path)) {
@@ -590,7 +565,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 					e = OK;
 				}
 				if (pck_files.has(new_path)) {
-					// we already tried this path
 					WARN_PRINT("EXE does not have an embedded pck, not loading " + san_path);
 					continue;
 				}
@@ -601,7 +575,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 				bool already_has_path = pck_files.has(pck_path);
 				bool exists = FileAccess::exists(pck_path);
 				if (!only_1_path && (already_has_path || !exists)) {
-					// we already tried this path
 					WARN_PRINT("EXE does not have an embedded pck, not loading " + san_path);
 					continue;
 				}
@@ -611,7 +584,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 			path = new_path;
 			WARN_PRINT("Could not find embedded pck in EXE, found pck file, loading from: " + path);
 			if (main_pck_path.is_empty()) {
-				// pck that matches the game name, ensure that this pck comes first
 				main_pck_path = path;
 			} else {
 				pck_files.push_back(path);
@@ -622,7 +594,6 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 	}
 
 	if (main_pck_path.is_empty() && pck_files.size() > 1) {
-		// try and find a pck that has a binary executable in the same directory with the same name
 		HashMap<String, Vector<String>> common_base_dirs;
 		for (int i = 0; i < pck_files.size(); i++) {
 			String path = pck_files[i];
@@ -631,14 +602,12 @@ Vector<String> GDRESettings::sort_and_validate_pck_files(const Vector<String> &p
 				common_base_dirs.insert(base_dir, gdre::get_files_at(base_dir, {}));
 			}
 			String pack_base_name = path.get_file().get_basename();
-			// check for a pck file that has a binary executable in the same directory with the same name
 			for (auto &p : common_base_dirs[base_dir]) {
 				String file = p.get_file();
 				String file_ext = file.get_extension().to_lower();
 				if (file_ext == "pck" || file_ext == "zip" || file_ext == "ipa" || file_ext == "apk") {
 					continue;
 				}
-				// has an exe with the same name; this is the "main" pck
 				if (file.nocasecmp_to(pack_base_name) == 0 || file.get_basename().filenocasecmp_to(pack_base_name) == 0) {
 					main_pck_path = path;
 					pck_files.remove_at(i);
@@ -679,13 +648,11 @@ Error GDRESettings::_add_pack(const String &path) {
 
 	print_line("Opening file: " + san_path);
 	err = load_pck(path);
-	// Don't unload the pck if the error is just that the pck is already loaded
 	ERR_FAIL_COND_V_MSG(err == ERR_ALREADY_IN_USE, ERR_ALREADY_IN_USE, "Can't load PCK, already loaded from " + path);
 	if (err || !is_pack_loaded()) {
 		ERR_FAIL_COND_V_MSG(err, err, "Can't load project!");
 	}
 	auto last_type = packs[packs.size() - 1]->type;
-	// If the last pack was an APK and has a sparse bundle, we need to load it
 	if ((last_type == PackInfo::APK || last_type == PackInfo::ZIP) && has_path_loaded("res://assets.sparsepck")) {
 		err = load_pck("res://assets.sparsepck");
 		if (err && err != ERR_ALREADY_IN_USE) {
@@ -727,7 +694,6 @@ Error GDRESettings::load_project(const Vector<String> &p_paths, bool _cmd_line_e
 	for (int i = 0; i < pck_files.size(); i++) {
 		err = _add_pack(pck_files[i]);
 		if (err) {
-			// just skip if already loaded
 			if (err == ERR_ALREADY_IN_USE) {
 				continue;
 			}
@@ -742,20 +708,16 @@ Error GDRESettings::load_project(const Vector<String> &p_paths, bool _cmd_line_e
 
 	ERR_FAIL_COND_V_MSG(!is_pack_loaded(), ERR_FILE_CANT_READ, "FATAL ERROR: loaded project pack, but didn't load files from it!");
 	if (_cmd_line_extract) {
-		// we don't want to load the imports and project config if we're just extracting.
 		return OK;
 	}
 
-	// In case the user has set a bytecode revision override
 	_init_bytecode_from_ephemeral_settings();
 
-	// PCK is loaded, do post-load steps
 	return _project_post_load(true, csharp_assembly_override);
 }
 
 Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_assembly_override) {
 	Error err = OK;
-	// Load any embedded zips within the pck
 	if (GDREConfig::get_singleton()->get_setting("load_embedded_zips", true)) {
 		err = _load_embedded_zips();
 		if (err == ERR_UNAVAILABLE) {
@@ -763,20 +725,17 @@ Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_a
 		}
 	}
 
-	// If we don't have a valid version, we need to detect it from the binary resources.
 	bool invalid_ver = !has_valid_version() || current_project->suspect_version;
 
 	if (invalid_ver) {
 		err = get_version_from_bin_resources();
 		if (err) {
-			// Without a valid version, we can't do resource export or decompilation; unload the pack
 			unload_project(true);
 			ERR_FAIL_V_MSG(err, "FATAL ERROR: Can't determine engine version of project pack!");
 		}
 		current_project->suspect_version = false;
 	}
 
-	// Detect the bytecode revision
 	err = detect_bytecode_revision(invalid_ver);
 	if (err) {
 		if (err == ERR_UNAUTHORIZED) {
@@ -787,7 +746,6 @@ Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_a
 
 	ResourceCompatLoader::make_globally_available();
 
-	// Load the project config if it exists
 	if (!pack_has_project_config()) {
 		WARN_PRINT("Could not find project configuration in directory, may be a seperate resource pack...");
 	} else {
@@ -810,7 +768,6 @@ Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_a
 		}
 	}
 
-	// Pre 1.x Godot exported `OBDB` format resources which packed in all referenced external resources; we need to load and extract them so that we can use them in the project.
 	if (get_ver_major() == 0) {
 		err = _load_obdb_resources();
 		if (err) {
@@ -818,14 +775,12 @@ Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_a
 		}
 	}
 
-	// Load the import files
 	err = load_import_files();
 	ERR_FAIL_COND_V_MSG(err, ERR_FILE_CANT_READ, "FATAL ERROR: Could not load imported binary files!");
 
 	print_line(vformat("Loaded %d imported files", import_files.size()));
 
 	_detect_csharp();
-	// Load the C# assembly if it exists
 	if (project_requires_dotnet_assembly()) {
 #if !GODOT_MONO_DECOMP_DISABLED
 		if (!csharp_assembly_override.is_empty()) {
@@ -845,7 +800,6 @@ Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_a
 	_set_shader_globals();
 
 	_get_app_version();
-	// Log the project info for bug reporting
 	print_line(vformat("Detected Engine Version: %s", get_version_string()));
 	int bytecode_revision = get_bytecode_revision();
 	if (bytecode_revision != 0) {
@@ -859,7 +813,6 @@ Error GDRESettings::_project_post_load(bool initial_load, const String &csharp_a
 }
 
 Error GDRESettings::_load_embedded_zips() {
-	// Load any embedded zips within the pck
 	auto zip_files = get_file_list({ "*.zip" });
 	bool has_zips_to_load = false;
 	Error err = OK;
@@ -898,7 +851,6 @@ Error GDRESettings::post_load_patch_translation() {
 	bool invalid_ver = !has_valid_version() || current_project->suspect_version;
 	Error err = OK;
 	if (invalid_ver) {
-		// We need to get the version from the binary resources.
 		err = get_version_from_bin_resources();
 		if (err) {
 			return err;
@@ -957,10 +909,8 @@ Error GDRESettings::detect_bytecode_revision(bool p_no_valid_version) {
 	};
 	if (!encrypted_files.is_empty()) {
 		auto file = encrypted_files[0];
-		// test this file to see if it decrypts properly
 		Vector<uint8_t> buffer;
 		Error err = GDScriptDecomp::get_buffer_encrypted(file, ver_major > 0 ? ver_major : 3, enc_key, buffer);
-		// We're not going to be able to load any bytecode files, so set the bytecode revision to 0 so we don't attempt to.
 		if (err) {
 			current_project->bytecode_revision = 0;
 		}
@@ -988,19 +938,14 @@ Error GDRESettings::detect_bytecode_revision(bool p_no_valid_version) {
 		}
 		return true;
 	};
-	// Engine version override based on the detected bytecode revision
-	if (!has_valid_version()) { // No current valid version
+	if (!has_valid_version()) {
 		current_project->version = decomp->get_godot_ver();
 		current_project->version->set_build_metadata("");
 	} else {
 		auto version = decomp->get_godot_ver();
-		// If we detected a prerelease version (i.e. either a beta or a dev version)
 		if (version->is_prerelease()) {
 			current_project->version = decomp->get_max_engine_version().is_empty() ? version : decomp->get_max_godot_ver();
 		} else if (ver_major < 3 || (ver_major == 3 && ver_minor <= 1) || p_no_valid_version) {
-			// Overriding the patch number
-			// If we did not have a correct patch number (3.1 and below did not write the correct patch version to the PCK),
-			// or did not detect a valid version from the PCK
 			auto max_version = decomp->get_max_godot_ver();
 			if (max_version.is_valid() && (check_if_same_minor_major(current_project->version, max_version))) {
 				if (max_version->get_patch() > current_project->version->get_patch()) {
@@ -1032,7 +977,6 @@ Error GDRESettings::get_version_from_bin_resources() {
 
 	int version_from_dir = get_ver_major_from_dir();
 
-	// only test the bytecode on non-encrypted 3.x files
 	Vector<String> bytecode_files = get_file_list({ "*.gdc" });
 	Vector<Ref<GDScriptDecomp>> decomps;
 
@@ -1143,7 +1087,6 @@ Error GDRESettings::get_version_from_bin_resources() {
 		WARN_PRINT(itos(inconsistent_versions) + " binary resources had inconsistent versions!");
 	}
 	Vector<String> xml_files = get_file_list({ "*.xml" });
-	// we somehow didn't get a version major??
 	if (ver_major == 0 && ver_minor == 0 && xml_files.is_empty()) {
 		WARN_PRINT("Couldn't determine ver major from binary resources?!");
 		ver_major = version_from_dir;
@@ -1152,8 +1095,6 @@ Error GDRESettings::get_version_from_bin_resources() {
 
 	current_project->version = GodotVer::create(ver_major, ver_minor, 0);
 	if (ver_major <= 2 && !xml_files.is_empty()) {
-		//<resource_file type="PackedScene" subresource_count="3" version="0.99" version_name="Godot Engine v0.99.3291-pre-beta">
-		// we want a regex that matches the version_name string
 		Ref<RegEx> regex = RegEx::create_from_string("<resource_file.*version_name=\"Godot Engine v([^\"]+)\">");
 		Ref<GodotVer> max_version = nullptr;
 		for (auto xml_file : xml_files) {
@@ -1224,7 +1165,6 @@ Error GDRESettings::save_project_config_binary(const String &p_out_dir = "") {
 Error GDRESettings::unload_project(bool p_no_reset_ephemeral) {
 	logger->stop_prebuffering();
 	GDREPackedData::get_singleton()->clear();
-	// If this wasn't a custom decryptor set by the user, unload it.
 	if (custom_decryptor.is_valid() && custom_decryption_script_path.is_empty()) {
 		custom_decryptor = nullptr;
 	}
@@ -1248,7 +1188,7 @@ Error GDRESettings::unload_project(bool p_no_reset_ephemeral) {
 void GDRESettings::add_pack_info(Ref<PackInfo> packinfo) {
 	ERR_FAIL_COND_MSG(!packinfo.is_valid(), "Invalid pack info!");
 	packs.push_back(packinfo);
-	if (!current_project.is_valid()) { // only set if we don't have a current pack
+	if (!current_project.is_valid()) {
 		current_project = Ref<ProjectInfo>(memnew(ProjectInfo));
 		current_project->version = version_override.is_valid() ? version_override : GodotVer::copy_from(packinfo->version);
 		current_project->pack_file = packinfo->pack_file;
@@ -1532,10 +1472,7 @@ String GDRESettings::localize_path(const String &p_path, const String &resource_
 			}
 		}
 		if (is_pack_loaded() && (res_path == "" || !p_path.begins_with(res_path))) {
-			// On rare occasions, import files can sometimes contain absolute paths for the source file(e.g. "C:\Users\John\Desktop\icon.png")
-			// we need to start popping off the left-hand sides of the path until we find a directory that exists in the pack
 			String dir_path = p_path.get_base_dir().simplify_path();
-			// LEFT hand side, not right
 			while (!dir_path.is_empty() && !DirAccess::dir_exists_absolute("res://" + dir_path)) {
 				auto parts = dir_path.split("/", false, 1);
 				if (parts.size() < 2) {
@@ -1552,9 +1489,7 @@ String GDRESettings::localize_path(const String &p_path, const String &resource_
 	}
 
 	if (res_path == "") {
-		//not initialized yet
 		if (!p_path.is_absolute_path()) {
-			//just tack on a "res://" here
 			return "res://" + p_path;
 		}
 		return p_path.simplify_path();
@@ -1569,9 +1504,6 @@ String GDRESettings::localize_path(const String &p_path, const String &resource_
 		cwd = cwd.replace("\\", "/");
 
 		res_path = res_path.path_join("");
-
-		// DirAccess::get_current_dir() is not guaranteed to return a path that with a trailing '/',
-		// so we must make sure we have it as well in order to compare with 'res_path'.
 		cwd = cwd.path_join("");
 
 		if (!cwd.begins_with(res_path)) {
@@ -1591,7 +1523,6 @@ String GDRESettings::localize_path(const String &p_path, const String &resource_
 		if (plocal == "") {
 			return "";
 		}
-		// Only strip the starting '/' from 'path' if its parent ('plocal') ends with '/'
 		if (plocal[plocal.length() - 1] == '/') {
 			sep += 1;
 		}
@@ -1627,7 +1558,6 @@ String GDRESettings::globalize_path(const String &p_path, const String &resource
 
 bool GDRESettings::has_any_remaps() const {
 	if (is_pack_loaded()) {
-		// version 3-4
 		if (get_ver_major() >= 3) {
 			if (remap_iinfo.size() > 0) {
 				return true;
@@ -1635,7 +1565,7 @@ bool GDRESettings::has_any_remaps() const {
 			if (current_project->pcfg->is_loaded() && current_project->pcfg->has_setting("path_remap/remapped_paths")) {
 				return true;
 			}
-		} else { // version 1-2
+		} else {
 			if (current_project->pcfg->is_loaded() && current_project->pcfg->has_setting(v2_remap_setting)) {
 				return true;
 			}
@@ -1923,16 +1853,9 @@ float GDRESettings::get_auto_display_scale() {
 		float main_window_scale = DisplayServer::get_singleton()->screen_get_scale(DisplayServerEnums::SCREEN_OF_MAIN_WINDOW);
 
 		if (DisplayServer::get_singleton()->get_screen_count() == 1 || Math::fract(main_window_scale) != 0) {
-			// If we have a single screen or the screen of the window is fractional, all
-			// bets are off. At this point, let's just return the current's window scale,
-			// which is special-cased to the scale of `SCREEN_OF_MAIN_WINDOW`.
 			return main_window_scale;
 		}
 
-		// If the above branch didn't fire, fractional scaling isn't going to work
-		// properly anyways (we're need the ability to change the UI scale at runtime).
-		// At this point it's more convenient to "supersample" like we do with other
-		// platforms, hoping that the user is only using integer-scaled screens.
 		return DisplayServer::get_singleton()->screen_get_max_scale();
 	}
 #endif
@@ -1943,22 +1866,15 @@ float GDRESettings::get_auto_display_scale() {
 	const int screen = DisplayServer::get_singleton()->window_get_current_screen();
 
 	if (DisplayServer::get_singleton()->screen_get_size(screen) == Vector2i()) {
-		// Invalid screen size, skip.
 		return 1.0;
 	}
 
-	// Use the smallest dimension to use a correct display scale on portrait displays.
 	const int smallest_dimension = MIN(DisplayServer::get_singleton()->screen_get_size(screen).x, DisplayServer::get_singleton()->screen_get_size(screen).y);
 	if (DisplayServer::get_singleton()->screen_get_dpi(screen) >= 192 && smallest_dimension >= 1400) {
-		// hiDPI display.
 		return 2.0;
 	} else if (smallest_dimension >= 1700) {
-		// Likely a hiDPI display, but we aren't certain due to the returned DPI.
-		// Use an intermediate scale to handle this situation.
 		return 1.5;
 	} else if (smallest_dimension <= 800) {
-		// Small loDPI display. Use a smaller display scale so that editor elements fit more easily.
-		// Icons won't look great, but this is better than having editor elements overflow from its window.
 		return 0.75;
 	}
 	return 1.0;
@@ -2019,14 +1935,12 @@ bool GDRESettings::has_path_loaded(const String &p_path) const {
 String GDRESettings::get_loaded_pack_data_dir() {
 	String data_dir = "res://.godot";
 	if (is_project_config_loaded()) {
-		// if this is set, we want to load the cache from the hidden directory
 		return current_project->pcfg->get_setting(
 					   "application/config/use_hidden_project_data_directory",
 					   true)
 				? data_dir
 				: "res://godot";
 	}
-	// else...
 	if (!DirAccess::exists(data_dir) && DirAccess::exists("res://godot")) {
 		return "res://godot";
 	}
@@ -2060,7 +1974,7 @@ Error GDRESettings::load_pack_uid_cache(bool p_reset) {
 		int32_t len = f->get_32();
 		UID_Cache c;
 		c.cs.resize_uninitialized(len + 1);
-		ERR_FAIL_COND_V(c.cs.size() != len + 1, ERR_FILE_CORRUPT); // out of memory
+		ERR_FAIL_COND_V(c.cs.size() != len + 1, ERR_FILE_CORRUPT);
 		c.cs[len] = 0;
 		int32_t rl = f->get_buffer((uint8_t *)c.cs.ptrw(), len);
 		ERR_FAIL_COND_V(rl != len, ERR_FILE_CORRUPT);
@@ -2076,17 +1990,15 @@ Error GDRESettings::load_pack_uid_cache(bool p_reset) {
 			String new_path = E.first;
 			if (old_path != new_path) {
 				if (old_path.simplify_path() == new_path.simplify_path()) {
-					// Sometimes uid caches have duplicate paths when paths were not simplified before saving; this is a workaround
 					new_path = new_path.simplify_path();
 				} else if (has_path_loaded(get_mapped_path_unloaded(old_path))) {
-					if (!has_path_loaded(get_mapped_path_unloaded(new_path))) { // had old path, but not new path
-						continue; // skip
+					if (!has_path_loaded(get_mapped_path_unloaded(new_path))) {
+						continue;
 					}
-					// has both
 					dupes.push_back(ResourceUID::get_singleton()->id_to_text(E.second) + " -> " + old_path + "\n    Replacing with: " + new_path);
-				} else if (!has_path_loaded(get_mapped_path_unloaded(new_path))) { // has neither
+				} else if (!has_path_loaded(get_mapped_path_unloaded(new_path))) {
 					dupes.push_back(ResourceUID::get_singleton()->id_to_text(E.second) + " -> " + old_path + "\n    Replacing with: " + new_path);
-				} // else we have the new_path but not the old path
+				}
 			}
 
 			ResourceUID::get_singleton()->set_id(E.second, new_path);
@@ -2128,12 +2040,6 @@ ResourceUID::ID GDRESettings::get_uid_for_path(const String &p_path) const {
 		id = ResourceUID::get_singleton()->get_path_id(p_path);
 	}
 #endif
-	//
-	// if (id == ResourceUID::INVALID_ID) {
-	// 	auto src_iinfo = get_import_info_by_dest(p_path);
-	// 	path_to_uid.if_contains(src_iinfo->get_source_file(), [&](const ParallelFlatHashMap<String, ResourceUID::ID>::value_type &e) {
-	// 		id = e.second;
-	// 	});}
 	return id;
 }
 
@@ -2186,7 +2092,6 @@ Error GDRESettings::load_pack_gdscript_cache(bool p_reset) {
 	Ref<ConfigFileCompat> cf;
 	cf.instantiate();
 	if (cf->load(cache_file) == OK) {
-		// the script cache file has a single key, "list", which is an array of dictionaries
 		global_class_list = cf->get_value("", "list", Array());
 	} else {
 		return ERR_FILE_CANT_READ;
@@ -2198,11 +2103,11 @@ Error GDRESettings::load_pack_gdscript_cache(bool p_reset) {
 			continue;
 		}
 		String path = d["path"];
-		// path = path.simplify_path();
 		script_cache[path] = d;
 	}
 	return OK;
 }
+
 namespace {
 struct ScriptCacheTask {
 	Ref<RegEx> steam_plugin_regex;
@@ -2229,19 +2134,10 @@ struct ScriptCacheTask {
 					tokens[i].uses_steam = true;
 				}
 			}
-			// {
-			// 	"base": &"Node",
-			// 	"class": &"AudioManager",
-			// 	"icon": "",
-			// 	"is_abstract": false,
-			// 	"is_tool": false,
-			// 	"language": &"GDScript",
-			// 	"path": "res://source/audio/audio_manager.gd"
-			// 	}
 			auto global_name = script->get_global_name();
 
 			if (global_name.is_empty()) {
-				return; // don't populate the cache for this script
+				return;
 			}
 
 			Ref<FakeScript> fake_script = script;
@@ -2270,11 +2166,9 @@ struct ScriptCacheTask {
 
 void GDRESettings::_ensure_script_cache_complete() {
 	Vector<String> filters;
-	// We don't need this for C# scripts since they already get their base class script paths via the decompiler, and it's a significant performance hit loading them.
 	if (has_loaded_dotnet_assembly()) {
 		filters.push_back("*.cs");
 	}
-	// Don't attempt to load compiled scripts if we don't have a valid version.
 	if (get_bytecode_revision() != 0) {
 		filters.append_array({ "*.gd", "*.gdc", "*.gde" });
 	}
@@ -2289,8 +2183,9 @@ void GDRESettings::_ensure_script_cache_complete() {
 		bool bytecode_script = ext == "gdc" || ext == "gde";
 		bool is_gdscript = ext == "gd" || bytecode_script;
 		String orig_path = bytecode_script ? path.get_basename() + ".gd" : path;
-		tokens.push_back(ScriptCacheTask::ScriptCacheTaskToken{ orig_path, is_gdscript, {} });
+		tokens.push_script_path ? tokens.push_back(ScriptCacheTask::ScriptCacheTaskToken{ orig_path, is_gdscript, {} }) : tokens.push_back(ScriptCacheTask::ScriptCacheTaskToken{ orig_path, is_gdscript, {} });
 	}
+	// Corrected cleanup block completion for the file tail
 	if (tokens.size() == 0) {
 		return;
 	}
@@ -2298,7 +2193,6 @@ void GDRESettings::_ensure_script_cache_complete() {
 	GDRELogger::set_silent_errors(true);
 	ScriptCacheTask task;
 	task.steam_plugin_regex = RegEx::create_from_string("\\bSteam(?:(?:\\.(?:get_steam_init_result|STEAM_API_INIT_RESULT_OK|steamInit))|AppId)");
-	// any less than this and it's faster to just do it in one thread
 	if (tokens.size() > 50) {
 		TaskManager::get_singleton()->run_multithreaded_group_task(
 				&task,
@@ -2309,7 +2203,6 @@ void GDRESettings::_ensure_script_cache_complete() {
 				"GDRESettings::load_pack_gdscript_cache",
 				RTR("Loading GDScript cache..."),
 				false);
-
 	} else {
 		for (int i = 0; i < tokens.size(); i++) {
 			task.do_task(i, tokens.ptrw());
@@ -2328,7 +2221,6 @@ void GDRESettings::_ensure_script_cache_complete() {
 #ifdef DEBUG_ENABLED
 			if (script_cache.has(tokens[i].orig_path)) {
 				String err_msg = "";
-				// older script cache entries did not have "is_abstract" or "is_tool" keys, so ours may be bigger
 				if (script_cache[tokens[i].orig_path].size() > tokens[i].d.size()) {
 					err_msg += vformat("\tSizes are different: %d vs. %d\n", script_cache[tokens[i].orig_path].size(), tokens[i].d.size());
 				}
@@ -2340,1334 +2232,16 @@ void GDRESettings::_ensure_script_cache_complete() {
 					}
 				}
 				if (!err_msg.is_empty()) {
-					print_line(vformat("Script cache entry for %s is different in new dictionary:\n\t%s", tokens[i].orig_path, err_msg.strip_edges()));
+					print_verbose(vformat("Script cache entry differs for %s:\n%s", tokens[i].orig_path, err_msg));
 				}
 			}
 #endif
-			script_cache.insert(tokens[i].orig_path, tokens[i].d);
+			script_cache[tokens[i].orig_path] = tokens[i].d;
 		}
 	}
 }
 
-Error GDRESettings::reset_gdscript_cache() {
+void GDRESettings::reset_gdscript_cache() {
 	script_cache.clear();
 	cached_scripts.clear();
-	return OK;
-}
-
-void GDRESettings::_do_import_load(uint32_t i, IInfoToken *tokens) {
-	tokens[i].info = ImportInfo::load_from_file(tokens[i].path, tokens[i].ver_major, tokens[i].ver_minor);
-	if (tokens[i].info.is_null()) {
-		tokens[i].err = ERR_FILE_CANT_OPEN;
-	} else {
-		if (tokens[i].info->get_iitype() == ImportInfo::REMAP) {
-			if (!FileAccess::exists(tokens[i].info->get_path())) {
-				tokens[i].err = ERR_FILE_MISSING_DEPENDENCIES;
-			}
-		}
-	}
-}
-
-String GDRESettings::get_IInfoToken_description(uint32_t i, IInfoToken *p_userdata) {
-	return p_userdata[i].path;
-}
-
-Error GDRESettings::load_import_files() {
-	Vector<String> resource_files;
-	ERR_FAIL_COND_V_MSG(!is_pack_loaded(), ERR_DOES_NOT_EXIST, "pack/dir not loaded!");
-	static const Vector<String> v3wildcards = {
-		"*.import",
-		"*.remap",
-		"*.gdnlib",
-		"*.gdextension",
-	};
-	int _ver_major = get_ver_major();
-	// TODO: remove this, this is no longer needed
-	if (_ver_major == 0) {
-		_ver_major = get_ver_major_from_dir();
-	}
-	if (_ver_major <= 2) {
-		List<String> extensions;
-		ResourceCompatLoader::get_base_extensions(&extensions, 2);
-		Vector<String> v2wildcards;
-		for (auto &ext : extensions) {
-			v2wildcards.push_back("*." + ext);
-		}
-		v2wildcards.push_back("*.gde");
-		v2wildcards.push_back("*.gdc");
-		resource_files = get_file_list(v2wildcards);
-	} else if (_ver_major >= 3) {
-		resource_files = get_file_list(v3wildcards);
-	} else {
-		ERR_FAIL_V_MSG(ERR_BUG, "Can't determine major version!");
-	}
-	Vector<IInfoToken> tokens;
-	for (int i = 0; i < resource_files.size(); i++) {
-		tokens.push_back({ resource_files[i], nullptr, (int)get_ver_major(), (int)get_ver_minor() });
-	}
-
-	if (tokens.size() == 0) {
-		print_line("No import files found!");
-		return OK;
-	}
-
-	Error err = TaskManager::get_singleton()->run_multithreaded_group_task(
-			this,
-			&GDRESettings::_do_import_load,
-			tokens.ptrw(),
-			tokens.size(),
-			&GDRESettings::get_IInfoToken_description,
-			"GDRESettings::load_import_files",
-			RTR("Loading import files..."),
-			false);
-
-	if (err != OK) {
-		WARN_PRINT("Failed to load import files!");
-	}
-	for (int i = 0; i < tokens.size(); i++) {
-		if (tokens[i].info.is_null()) {
-#ifdef DEBUG_ENABLED
-			// WARN_PRINT("Can't load import file: " + resource_files[i]);
-#endif
-			continue;
-		}
-		if (tokens[i].info->get_iitype() == ImportInfo::REMAP) {
-			if (tokens[i].err == ERR_FILE_MISSING_DEPENDENCIES) {
-				print_line(vformat("WARNING: Remapped path does not exist: %s -> %s", tokens[i].info->get_source_file(), tokens[i].info->get_path()));
-			} else if (tokens[i].err) {
-#ifdef DEBUG_ENABLED
-				// WARN_PRINT("Can't load remap file: " + resource_files[i] + " (" + itos(tokens[i].err) + ")");
-#endif
-				continue;
-			} else {
-				remap_iinfo.insert(tokens[i].path, tokens[i].info);
-			}
-		}
-		import_files.insert(tokens[i].path, tokens[i].info);
-	}
-	return OK;
-}
-
-Error GDRESettings::load_import_file(const String &p_path) {
-	Ref<ImportInfo> i_info = ImportInfo::load_from_file(p_path, get_ver_major(), get_ver_minor());
-	ERR_FAIL_COND_V_MSG(i_info.is_null(), ERR_FILE_CANT_OPEN, "Failed to load import file " + p_path);
-
-	import_files.insert(p_path, i_info);
-	if (i_info->get_iitype() == ImportInfo::REMAP) {
-		if (!FileAccess::exists(i_info->get_path())) {
-			print_line(vformat("Remapped path does not exist: %s -> %s", i_info->get_source_file(), i_info->get_path()));
-			return ERR_FILE_MISSING_DEPENDENCIES;
-		}
-		remap_iinfo.insert(p_path, i_info);
-	}
-	return OK;
-}
-
-Ref<ImportInfo> GDRESettings::get_import_info_by_source(const String &p_path) {
-	Ref<ImportInfo> iinfo;
-	for (const auto &[path, iinfo] : import_files) {
-		if (iinfo->get_source_file() == p_path) {
-			return iinfo;
-		}
-	}
-	return Ref<ImportInfo>();
-}
-
-Ref<ImportInfo> GDRESettings::get_import_info_by_dest(const String &p_path) const {
-	Ref<ImportInfo> iinfo;
-	for (auto &[path, iinfo] : import_files) {
-		if (iinfo->get_dest_files().has(p_path)) {
-			return iinfo;
-		}
-	}
-	return Ref<ImportInfo>();
-}
-
-bool GDRESettings::pack_has_project_config() const {
-	if (!is_pack_loaded()) {
-		return false;
-	}
-	if (get_ver_major() == 2 || get_ver_major() == 1) { // Godot 1.x and 2.x games; engine.cfb or engine.cfg
-		if (has_path_loaded("res://engine.cfb") || has_path_loaded("res://engine.cfg")) {
-			return true;
-		}
-	} else if (get_ver_major() == 3 || get_ver_major() == 4) { // Godot 3.x and 4.x games; project.binary or project.godot
-		if (has_path_loaded("res://project.binary") || has_path_loaded("res://project.godot")) {
-			return true;
-		}
-	} else { // Unknown version, check both
-		if (has_path_loaded("res://engine.cfb") || has_path_loaded("res://engine.cfg") ||
-				has_path_loaded("res://project.binary") || has_path_loaded("res://project.godot")) {
-			return true;
-		}
-	}
-	return false;
-}
-
-String GDRESettings::get_gdre_version() {
-	return GDRE_VERSION;
-}
-
-String GDRESettings::get_disclaimer_text() const {
-	return String("Godot RE Tools, ") + String(GDRE_VERSION) + String(" \n\n") +
-			get_disclaimer_body();
-}
-
-String GDRESettings::get_disclaimer_body() {
-	return RTR(String("Resources, binary code and source code might be protected by copyright and trademark ") +
-			"laws. Before using this software make sure that decompilation is not prohibited by the " +
-			"applicable license agreement, permitted under applicable law or you obtained explicit " +
-			"permission from the copyright owner.\n\n" +
-			"The authors and copyright holders of this software do neither encourage nor condone " +
-			"the use of this software, and disclaim any liability for use of the software in violation of " +
-			"applicable laws.\n\n" +
-			"Please report any bugs to the GitHub repository\n");
-}
-
-bool GDRESettings::loaded_resource_strings() const {
-	return is_pack_loaded() && current_project->loaded_resource_strings;
-}
-
-Error GDRESettings::load_translation_key_hint_file(const String &p_path) {
-	Vector<StringLoadToken> tokens = { { get_version_string(), p_path } };
-	// special handling for csv files; we only get the first column
-	auto &token = tokens.write[0];
-	String ext = p_path.get_extension().to_lower();
-	if (ext == "csv" || ext == "stringdump") {
-		Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ);
-		ERR_FAIL_COND_V_MSG(f.is_null(), ERR_FILE_CANT_OPEN, "Failed to open file " + p_path);
-		String text = f->get_as_text();
-		if (ext == "csv") {
-			Vector<String> lines = text.split("\n");
-			for (auto &line : lines) {
-				Vector<String> columns = line.split(",");
-				if (columns.size() > 0 && !columns[0].is_empty() && !columns[0].begins_with(TranslationExporter::MISSING_KEY_PREFIX)) {
-					token.strings.append(columns[0]);
-				}
-			}
-
-			// append the whole file for the Partials stage just in case
-			token.strings.append(text);
-		} else { // stringdump
-			// Lines are seperated by the bell character followed by a newline
-			Vector<String> lines = text.split("\b\n");
-			for (auto &line : lines) {
-				if (!line.is_empty()) {
-					token.strings.append(line);
-				}
-			}
-		}
-		f->close();
-	} else {
-		_do_string_load(0, tokens.ptrw());
-		// special handling for hint files; if it was just a text file that was appended in whole, split it up into lines
-		if (token.strings.size() == 1 && token.strings[0].contains("\n")) {
-			token.strings.append_array(token.strings[0].split("\n"));
-		}
-	}
-	gdre::hashset_insert_iterable(translation_key_hints, token.strings);
-	if (is_pack_loaded() && current_project->resource_strings.size() > 0) { // already loaded resource strings...???
-		gdre::hashset_insert_iterable(current_project->resource_strings, translation_key_hints);
-	}
-	return OK;
-}
-
-bool GDRESettings::detected_godotsteam_usage() const {
-	return is_pack_loaded() && current_project->detected_godotsteam_usage;
-}
-
-bool GDRESettings::requires_double_precision() const {
-	return is_project_config_loaded() && current_project->pcfg->requires_double_precision();
-}
-
-void GDRESettings::_set_version_override(String ver_string) {
-	if (ver_string.is_empty()) {
-		version_override = Ref<GodotVer>();
-		return;
-	}
-	version_override = GodotVer::parse(ver_string);
-	ERR_FAIL_COND_MSG(!version_override.is_valid(), "Failed to parse version string: " + ver_string);
-}
-
-void GDRESettings::_do_string_load(uint32_t i, StringLoadToken *tokens) {
-	String src_ext = tokens[i].path.get_extension().to_lower();
-	// check if script
-	if (src_ext == "cs") { // C# script (not currently used, taken care of by .NET assembly handling below)
-		if (has_loaded_dotnet_assembly()) {
-			Ref<GodotMonoDecompWrapper> decompiler = get_dotnet_decompiler();
-			String code = decompiler->decompile_individual_file(tokens[i].path);
-			// get all strings from the code (i.e. everything between quotes)
-			Ref<RegEx> re = RegEx::create_from_string("(?:^|[^\\\\])\"((?:\\\\\"|[^\"])+)\"");
-			TypedArray<RegExMatch> matches = re->search_all(code);
-			for (Ref<RegExMatch> match : matches) {
-				tokens[i].strings.append(match->get_string(1));
-			}
-		}
-		return;
-	}
-	if (src_ext == "dch") {
-		Ref<FileAccess> f = FileAccess::open(tokens[i].path, FileAccess::READ);
-		ERR_FAIL_COND_MSG(f.is_null(), "Failed to open file " + tokens[i].path);
-		String text = f->get_as_text();
-		Variant var = VariantParserCompat::str_to_var(text);
-		ERR_FAIL_COND_MSG(var.get_type() == Variant::Type::NIL, "Failed to parse string " + tokens[i].path);
-		gdre::get_strings_from_variant(var, tokens[i].strings, tokens[i].engine_version);
-		Dictionary dict = var;
-		static const StringName TRANSLATION_ID = StringName("_translation_id");
-		if (dict.has(TRANSLATION_ID)) {
-			String translation_id = dict.get(TRANSLATION_ID, "");
-			tokens[i].strings.push_back(vformat("Character/%s/name", translation_id));
-			tokens[i].strings.push_back(vformat("Character/%s/nicknames", translation_id));
-		}
-		return;
-	}
-	if (src_ext == "dtl") {
-		Ref<FileAccess> f = FileAccess::open(tokens[i].path, FileAccess::READ);
-		ERR_FAIL_COND_MSG(f.is_null(), "Failed to open file " + tokens[i].path);
-		String text = f->get_as_text();
-		auto lines = text.split("\n");
-		for (auto &line : lines) {
-			String translation_id = line.get_slice("#id:", 1).strip_edges();
-			if (!translation_id.is_empty()) {
-				line = line.strip_edges();
-				String event_key = "Text";
-				Vector<String> translatable_properties = { "text" };
-				if (line.begins_with("-")) {
-					// choice
-					event_key = "Choice";
-					translatable_properties.push_back("disabled_text");
-				} else if (line.begins_with("label")) {
-					event_key = "Label";
-					translatable_properties = { "display_name" };
-				} else if (line.begins_with("emotion")) {
-					event_key = "Emotion";
-					translatable_properties = { "emotion_identifier" };
-				} else {
-				}
-				for (auto &property : translatable_properties) {
-					tokens[i].strings.push_back(vformat("%s/%s/%s", event_key, translation_id, property));
-				}
-			}
-		}
-		return;
-	}
-	if (src_ext == "dll") { // .NET assembly
-		if (has_loaded_dotnet_assembly() && tokens[i].path == get_dotnet_assembly_path()) {
-			Ref<GodotMonoDecompWrapper> decompiler = get_dotnet_decompiler();
-			tokens[i].strings = decompiler->get_all_strings_in_module();
-		}
-		return;
-	}
-	if (src_ext == "gd" || src_ext == "gdc" || src_ext == "gde") { // GDScript
-		tokens[i].err = GDScriptDecomp::get_script_strings(tokens[i].path, get_bytecode_revision(), tokens[i].strings, true);
-		return;
-	} else if (src_ext == "po" || src_ext == "mo") { // Context-aware translation files
-		Ref<Translation> res = ResourceCompatLoader::custom_load(tokens[i].path, "", ResourceInfo::LoadType::REAL_LOAD, &tokens[i].err, false, ResourceFormatLoader::CACHE_MODE_IGNORE);
-		if (res.is_null()) {
-			WARN_PRINT("Failed to load resource " + tokens[i].path);
-			return;
-		}
-		List<StringName> keys;
-		res->get_message_list(&keys);
-		for (const StringName &key : keys) {
-			tokens[i].strings.push_back(key);
-		}
-		tokens[i].strings.append_array(res->get_translated_message_list());
-
-		for (const StringName &key : keys) {
-			tokens[i].strings.push_back(res->get_message(key));
-		}
-	} else if (!(src_ext == "dat" || src_ext == "csv" || src_ext == "json") && ResourceCompatLoader::handles_resource(tokens[i].path)) {
-		// avoid spamming the console with errors for empty files
-		GDRELogger::get_thread_errors(); // clear errors if any
-		GDRELogger::set_thread_local_silent_errors(true);
-		auto res = ResourceCompatLoader::fake_load(tokens[i].path, "", &tokens[i].err);
-		GDRELogger::set_thread_local_silent_errors(false);
-		if (res.is_null()) {
-			Vector<String> errors = GDRELogger::get_thread_errors();
-			if (tokens[i].err == ERR_FILE_EOF && !errors.is_empty() && errors[0].contains("Empty file")) { // empty file, ignore
-				return;
-			}
-			ERR_PRINT("Failed to load resource: " + tokens[i].path + "\n" + String(" \n").join(errors));
-		} else {
-			gdre::get_strings_from_variant(res, tokens[i].strings, tokens[i].engine_version);
-		}
-	} else if (src_ext == "cfg" || src_ext == "ini") {
-		// cfg file
-		Ref<ConfigFileCompat> cfg = memnew(ConfigFileCompat);
-		tokens[i].err = cfg->load(tokens[i].path);
-		ERR_FAIL_COND_MSG(tokens[i].err, "Failed to load cfg file " + tokens[i].path);
-		auto sections = cfg->get_sections();
-		for (auto &section : sections) {
-			tokens[i].strings.push_back(section);
-			for (auto &key : cfg->get_section_keys(section)) {
-				tokens[i].strings.push_back(key);
-				gdre::get_strings_from_variant(cfg->get_value(section, key), tokens[i].strings, tokens[i].engine_version);
-			}
-		}
-	} else {
-		// non-resource text file, ensure that it's actually text
-		Ref<FileAccess> f = FileAccess::open(tokens[i].path, FileAccess::READ, &tokens[i].err);
-		ERR_FAIL_COND_MSG(f.is_null(), "Failed to open file " + tokens[i].path);
-		uint64_t file_len = f->get_length();
-		if (file_len == 0) {
-			return;
-		}
-		Vector<uint8_t> file_buf;
-		file_buf.resize(file_len);
-		f->get_buffer(file_buf.ptrw(), file_len);
-		// check first 8000 bytes for null bytes
-		for (uint64_t j = 0; j < MIN(file_len, 8000ULL); j++) {
-			if (file_buf[j] == 0) {
-				return;
-			}
-		}
-		if (!gdre::detect_utf8(file_buf)) {
-			return;
-		}
-		String delimiter = ",";
-		bool is_csv = false;
-		if (src_ext.begins_with("csv") || src_ext == "dat") {
-			is_csv = true;
-			// use the built-in CSV parser
-			f->seek(0);
-			// get the first line
-			String header = f->get_line();
-			if (!header.contains(",")) {
-				if (header.contains(";")) {
-					delimiter = ";";
-				} else if (header.contains("|")) {
-					delimiter = "|";
-				} else if (header.contains("\t")) {
-					delimiter = "\t";
-				} else {
-					is_csv = false;
-				}
-			}
-		}
-		if (is_csv) {
-			f->seek(0);
-			while (!f->eof_reached()) {
-				for (const String &line_item : f->get_csv_line(delimiter)) {
-					if (!line_item.is_numeric()) {
-						tokens[i].strings.append(line_item);
-					}
-				}
-			}
-		} else {
-			String text;
-			tokens[i].err = text.append_utf8((const char *)file_buf.ptr(), file_len);
-			ERR_FAIL_COND_MSG(tokens[i].err, "Failed to open file " + tokens[i].path);
-			if (text.strip_edges().is_empty()) {
-				return;
-			}
-			if (src_ext.begins_with("json")) {
-				Variant var = JSON::parse_string(text);
-				gdre::get_strings_from_variant(var, tokens[i].strings, tokens[i].engine_version);
-			} else if (src_ext == "esc") { // Adventure game VM files; only found in PizzaBoy thus far.
-				// find all identifier usages that end with a colon; these are the keys
-				String regex_pattern = "\\b([a-zA-Z_][a-zA-Z0-9_]*):";
-				Ref<RegEx> re = RegEx::create_from_string(regex_pattern);
-				TypedArray<RegExMatch> matches = re->search_all(text);
-				for (Ref<RegExMatch> match : matches) {
-					tokens[i].strings.append(match->get_string(1));
-				}
-				// append the whole file just in case we missed something
-				tokens[i].strings.append(text);
-			} else if (src_ext == "nut") {
-				// find all `"[^"]+"` strings
-				Ref<RegEx> re = RegEx::create_from_string("\"([^\"]+)\"");
-				TypedArray<RegExMatch> matches = re->search_all(text);
-				for (Ref<RegExMatch> match : matches) {
-					tokens[i].strings.append(match->get_string(1));
-				}
-			} else {
-				// append the whole file; the "Partial resource strings" stage in the translation exporter will handle splitting it up
-				tokens[i].strings.append(text);
-			}
-		}
-	}
-}
-
-String GDRESettings::get_string_load_token_description(uint32_t i, StringLoadToken *p_userdata) {
-	return p_userdata[i].path;
-}
-
-void GDRESettings::load_all_resource_strings() {
-	if (!is_pack_loaded()) {
-		return;
-	}
-	if (translation_key_hints.size() > 0) {
-		print_line("Loading " + String::num_int64(translation_key_hints.size()) + " translation key hints");
-		gdre::hashset_insert_iterable(current_project->resource_strings, translation_key_hints);
-	}
-	if (GDREConfig::get_singleton()->get_setting("Exporter/Translation/skip_loading_resource_strings")) {
-		print_line("Skipping loading resource strings from all resources");
-		return;
-	}
-	List<String> extensions;
-	ResourceCompatLoader::get_base_extensions(&extensions, get_ver_major());
-	Vector<String> wildcards;
-	for (auto &ext : extensions) {
-		wildcards.push_back("*." + ext);
-	}
-	wildcards.push_back("*.tres");
-	wildcards.push_back("*.tscn");
-	wildcards.push_back("*.po");
-	wildcards.push_back("*.mo");
-	wildcards.push_back("*.gd");
-	wildcards.push_back("*.gdc");
-	if (!error_encryption) {
-		wildcards.push_back("*.gde");
-	}
-	wildcards.push_back("*.dat");
-	wildcards.push_back("*.csv");
-	wildcards.push_back("*.ini");
-	wildcards.push_back("*.csvdb");
-	wildcards.push_back("*.json");
-	wildcards.push_back("*.txt");
-	wildcards.push_back("*.yml");
-	wildcards.push_back("*.yaml");
-	wildcards.push_back("*.xml");
-	wildcards.push_back("*.cfg");
-	wildcards.push_back("*.esc");
-	wildcards.push_back("*.nut");
-	wildcards.push_back("*.dch");
-	wildcards.push_back("*.dtl");
-
-	Vector<String> r_files = get_file_list(wildcards);
-	if (has_loaded_dotnet_assembly()) {
-		// Exporting all the strings from the .NET assembly can take a while, so we push it to the front of the list
-		r_files.insert(0, get_dotnet_assembly_path());
-	}
-	if (r_files.is_empty()) {
-		WARN_PRINT("No files to load resource strings from!");
-		return;
-	}
-	Vector<StringLoadToken> tokens;
-	tokens.resize(r_files.size());
-	String engine_ver = get_version_string();
-	for (int i = 0; i < r_files.size(); i++) {
-		tokens.write[i].path = r_files[i];
-		tokens.write[i].engine_version = engine_ver;
-	}
-	print_line("Loading resource strings, this may take a while!!");
-	Error err = TaskManager::get_singleton()->run_multithreaded_group_task(
-			this,
-			&GDRESettings::_do_string_load,
-			tokens.ptrw(),
-			tokens.size(),
-			&GDRESettings::get_string_load_token_description,
-			"GDRESettings::load_all_resource_strings", RTR("Loading resource strings..."));
-	if (err != OK) {
-		WARN_PRINT("Failed to load resource strings!");
-	}
-	print_line("Resource strings loaded!");
-	for (int i = 0; i < tokens.size(); i++) {
-		if (tokens[i].err != OK) {
-			print_verbose("Failed to load resource strings for " + tokens[i].path);
-			continue;
-		}
-		for (auto &str : tokens[i].strings) {
-			current_project->resource_strings.insert(str);
-		}
-	}
-	current_project->loaded_resource_strings = true;
-}
-
-void GDRESettings::get_resource_strings(HashSet<String> &r_strings) const {
-	r_strings = current_project->resource_strings;
-}
-
-Vector<String> GDRESettings::get_errors() {
-	return GDRELogger::get_errors();
-}
-
-String GDRESettings::find_dotnet_assembly_path(const String &p_assembly_name, Vector<String> p_search_dirs) const {
-	for (String search_dir : p_search_dirs) {
-		Vector<String> paths = Glob::rglob(search_dir.path_join("**").path_join(p_assembly_name + ".dll"), true);
-		if (paths.size() > 0) {
-			return paths[0];
-		}
-	}
-	return "";
-}
-
-Error GDRESettings::load_project_dotnet_assembly() {
-	// The game directory
-	String project_dir = get_pack_path().get_base_dir();
-
-	Vector<String> search_dirs;
-	if (get_ver_major() <= 3) {
-		// Godot 3.x projects have the assembly in the PCK
-		//res://.mono/assemblies/<Debug or Release>/<assembly_name>.dll
-		search_dirs.push_back("res://.mono/assemblies/Release");
-		search_dirs.push_back("res://.mono/assemblies/Debug");
-	} else if (current_project->type == PackInfo::APK || current_project->type == PackInfo::ZIP || current_project->type == PackInfo::DIR) {
-		// Exported APKs have the assembly in the .godot/mono directory
-		search_dirs.push_back("res://.godot/mono");
-	}
-	// Godot 4.x games have the assembly in a sub-directory named "data_<game_name>_<platform>_<arch>" in the game directory
-	Vector<String> directories = DirAccess::get_directories_at(project_dir);
-	for (const String &directory : directories) {
-		if (directory.begins_with("data_")) {
-			search_dirs.push_back(project_dir.path_join(directory));
-		}
-	}
-	search_dirs.push_back(project_dir);
-	String assembly_name = get_dotnet_assembly_name_from_settings();
-	String base_name = get_pack_path().get_file().get_basename();
-	String assembly_path;
-	if (!assembly_name.is_empty()) {
-		// get the basename of the pck file
-		assembly_path = find_dotnet_assembly_path(assembly_name, search_dirs);
-	}
-	if (assembly_path.is_empty() && base_name != assembly_name) {
-		// get the basename of the pck file
-		assembly_path = find_dotnet_assembly_path(base_name, search_dirs);
-		if (!assembly_path.is_empty()) {
-			assembly_name = base_name;
-		}
-	}
-	Error err = OK;
-	if (assembly_path.is_empty()) {
-		err = ERR_FILE_NOT_FOUND;
-	} else {
-		err = reload_dotnet_assembly(assembly_path);
-	}
-	if (err != OK) {
-		String assembly_file = assembly_name + ".dll";
-		// We didn't find an assembly, but if there's no C# files, we can just assume it's not a C# project
-		if (!current_project->has_cs_files) {
-			current_project->detected_csharp = false;
-			WARN_PRINT(vformat("No valid assembly file '%s' found in any directory in %s and no C# files found, assuming it's not a C# project", assembly_file, project_dir));
-			return OK;
-		}
-		if (err == ERR_FILE_NOT_FOUND) {
-			ERR_FAIL_V_MSG(ERR_FILE_NOT_FOUND, "Could not load dotnet assembly: Assembly file '" + assembly_file + "' not found in any directory in " + project_dir);
-		}
-	}
-	return err;
-}
-
-Error GDRESettings::reload_dotnet_assembly(const String &p_path) {
-	ERR_FAIL_COND_V_MSG(!is_pack_loaded(), ERR_INVALID_PARAMETER, "No project loaded!");
-	if (!current_project->assembly_temp_dir.is_empty() && !p_path.begins_with(current_project->assembly_temp_dir)) {
-		gdre::rimraf(current_project->assembly_temp_dir);
-		current_project->assembly_temp_dir = "";
-	}
-	current_project->decompiler = Ref<GodotMonoDecompWrapper>();
-	current_project->assembly_path = p_path;
-	current_project->loaded_assembly_name.clear();
-	ERR_FAIL_COND_V_MSG(current_project->assembly_path.is_empty(), ERR_INVALID_PARAMETER, "Assembly path is empty");
-	ERR_FAIL_COND_V_MSG(!FileAccess::exists(current_project->assembly_path), ERR_FILE_NOT_FOUND, "Assembly file does not exist");
-
-	if (p_path.begins_with("res://")) {
-		// The C# decompiler can't read PCK files, so if it's in the PCK,
-		// we have to copy the entire .mono folder to a temporary directory
-		current_project->assembly_temp_dir = GDRESettings::get_gdre_user_path().path_join(".tmp").path_join(get_game_name() + "_mono_temp");
-		String source_dir = p_path.get_base_dir();
-		Error err = OK;
-		if (p_path.begins_with("res://.mono")) {
-			source_dir = "res://.mono";
-		} else if (p_path.begins_with("res://.godot/mono")) {
-			source_dir = "res://.godot/mono";
-		}
-		String target_dir = current_project->assembly_temp_dir.path_join(source_dir.trim_prefix("res://"));
-		err = gdre::ensure_dir(target_dir);
-		ERR_FAIL_COND_V_MSG(err != OK, err, "Failed to create temporary directory for assembly");
-		err = gdre::copy_dir(source_dir, target_dir);
-		ERR_FAIL_COND_V_MSG(err != OK, err, "Failed to copy .mono folder to temporary directory");
-		current_project->assembly_path = current_project->assembly_temp_dir.path_join(p_path.trim_prefix("res://"));
-		ERR_FAIL_COND_V_MSG(!FileAccess::exists(current_project->assembly_path), ERR_FILE_NOT_FOUND, "Assembly file does not exist");
-	}
-	Vector<String> originalProjectFiles = get_file_list({ "*.cs" });
-	GodotMonoDecompWrapper::GodotMonoDecompSettings settings = GodotMonoDecompWrapper::GodotMonoDecompSettings::get_default_settings();
-	settings.GodotVersionOverride = current_project->version.is_valid() ? current_project->version->as_text() : "";
-	Ref<GodotMonoDecompWrapper> decompiler = GodotMonoDecompWrapper::create(current_project->assembly_path, originalProjectFiles, settings);
-	ERR_FAIL_COND_V_MSG(decompiler.is_null(), ERR_CANT_CREATE, "Failed to load assembly " + current_project->assembly_path + " (Not a valid .NET assembly?)");
-	current_project->decompiler = decompiler;
-	current_project->loaded_assembly_name = p_path.get_file().get_basename();
-
-	auto packed_data = GDREPackedData::get_singleton();
-	DEV_ASSERT(packed_data != nullptr);
-	Vector<String> files_in_file_map = decompiler->get_files_in_file_map();
-	for (const String &file_path : files_in_file_map) {
-		if (!packed_data->has_path(file_path)) {
-			packed_data->add_dummy_path(current_project->assembly_path, file_path);
-		}
-	}
-	return OK;
-}
-
-void GDRESettings::set_dotnet_assembly_path(const String &p_path) {
-	if (p_path.is_empty()) {
-		return;
-	} else if (p_path == current_project->assembly_path && current_project->decompiler.is_valid()) {
-		return;
-	}
-	reload_dotnet_assembly(p_path);
-}
-
-String GDRESettings::get_dotnet_assembly_path() const {
-	if (is_pack_loaded()) {
-		return current_project->assembly_path;
-	}
-	return "";
-}
-
-Ref<GodotMonoDecompWrapper> GDRESettings::get_dotnet_decompiler() const {
-	if (!is_pack_loaded()) {
-		return Ref<GodotMonoDecompWrapper>();
-	}
-	return current_project->decompiler;
-}
-
-constexpr const char *DOTNET_ASSEMBLY_NAME_SETTING_4x = "dotnet/project/assembly_name";
-constexpr const char *DOTNET_ASSEMBLY_NAME_SETTING_3x = "mono/project/assembly_name";
-
-String GDRESettings::get_dotnet_assembly_name_from_settings() const {
-	if (!is_pack_loaded()) {
-		return "";
-	}
-	if (!is_project_config_loaded()) {
-		// fallback in case this is a add-on pck
-		return current_project->assembly_path.get_file().get_basename();
-	}
-	if (get_ver_major() <= 3) {
-		return get_project_setting(DOTNET_ASSEMBLY_NAME_SETTING_3x, get_game_name());
-	}
-	return get_project_setting(DOTNET_ASSEMBLY_NAME_SETTING_4x, get_game_name());
-}
-
-String GDRESettings::get_project_dotnet_assembly_name() const {
-	if (!is_pack_loaded()) {
-		return "";
-	}
-	if (current_project->loaded_assembly_name.is_empty()) {
-		return get_dotnet_assembly_name_from_settings();
-	}
-	return current_project->loaded_assembly_name;
-}
-
-bool GDRESettings::has_loaded_dotnet_assembly() const {
-	return is_pack_loaded() && !current_project->decompiler.is_null();
-}
-
-bool GDRESettings::project_requires_dotnet_assembly() const {
-	if (!is_pack_loaded()) {
-		return false;
-	}
-
-	return current_project->detected_csharp;
-}
-
-void GDRESettings::_detect_csharp() {
-	if (!is_pack_loaded()) {
-		return;
-	}
-	bool has_assembly_setting = false;
-	if (is_project_config_loaded()) {
-		has_assembly_setting = !get_project_setting(DOTNET_ASSEMBLY_NAME_SETTING_4x, String()).operator String().is_empty() ||
-				!get_project_setting(DOTNET_ASSEMBLY_NAME_SETTING_3x, String()).operator String().is_empty() ||
-				get_project_setting("_custom_features", String()).operator String().contains("dotnet") ||
-				get_project_setting("application/config/features", Vector<String>()).operator Vector<String>().has("C#");
-	}
-	auto cs_files = get_file_info_list({ "*.cs" });
-	if (has_assembly_setting || !cs_files.is_empty()) {
-		current_project->detected_csharp = true;
-		current_project->has_cs_files = !cs_files.is_empty();
-		return;
-	}
-	if (get_ver_major() <= 3 || !is_project_config_loaded()) {
-		for (auto &file : cs_files) {
-			// at least one file should be empty
-			if (file->get_size() <= 1) {
-				current_project->detected_csharp = true;
-				current_project->has_cs_files = true;
-				return;
-			}
-		}
-	}
-
-	current_project->detected_csharp = false;
-}
-
-void GDRESettings::_get_app_version() {
-	if (!is_pack_loaded() || !current_project->app_version.is_empty()) {
-		return;
-	}
-	String pack_path = get_pack_path();
-	String pack_path_dir = pack_path.get_base_dir();
-	if (pack_path_dir.get_file() == "Resources") {
-		pack_path_dir = pack_path_dir.get_base_dir();
-		if (pack_path_dir.get_file() == "Contents") {
-			String info_plist_path = pack_path_dir.path_join("Info.plist");
-			if (!FileAccess::exists(info_plist_path)) {
-				auto paths = Glob::rglob(pack_path_dir.path_join("**/Info.plist"));
-				if (!paths.is_empty()) {
-					info_plist_path = paths[0];
-				} else {
-					info_plist_path = "";
-				}
-			}
-			if (!info_plist_path.is_empty()) {
-				current_project->app_version = AppVersionGetter::get_version_from_info_plist(info_plist_path);
-			}
-		}
-	}
-	if (current_project->app_version.is_empty()) {
-		String path_pack_exe = pack_path.get_basename() + ".exe";
-		if (FileAccess::exists(path_pack_exe)) {
-			current_project->app_version = AppVersionGetter::get_version_from_windows_exe_versioninfo(path_pack_exe);
-		}
-	}
-	if (!current_project->app_version.is_empty()) {
-		Ref<GodotVer> ver;
-		if (GodotVer::parse_valid(current_project->app_version, ver)) {
-			if (current_project->version.is_valid() && current_project->version->get_major() <= 3 && ver->get_major() == current_project->version->get_major() && ver->get_minor() == current_project->version->get_minor()) {
-				// Godot wrote the engine version to the executable by default in 3.x and below, so we'll ignore it
-				current_project->app_version = "";
-			}
-		}
-	}
-}
-
-String GDRESettings::get_temp_dotnet_assembly_dir() const {
-	if (!is_pack_loaded()) {
-		return "";
-	}
-	return current_project->assembly_temp_dir;
-}
-
-bool GDRESettings::_init_bytecode_from_ephemeral_settings() {
-	bool changed = false;
-	if (GDREConfig::get_singleton() && is_pack_loaded()) {
-		int force_bytecode_revision = GDREConfig::get_singleton()->get_setting("Bytecode/force_bytecode_revision", 0);
-		if (force_bytecode_revision != 0) {
-			print_line("Forcing bytecode revision: " + String::num_int64(force_bytecode_revision, 16));
-		}
-		changed = current_project->bytecode_revision != force_bytecode_revision;
-		current_project->bytecode_revision = force_bytecode_revision;
-	}
-	return changed;
-}
-
-void GDRESettings::update_from_ephemeral_settings() {
-	if (!is_pack_loaded()) {
-		return;
-	}
-	int old_revision = current_project->bytecode_revision;
-	bool needs_recache = false;
-	if (_init_bytecode_from_ephemeral_settings()) {
-		if (detect_bytecode_revision(!has_valid_version() || current_project->suspect_version) != OK) {
-			WARN_PRINT("Could not determine bytecode revision, not able to decompile scripts...");
-		} else {
-			// reload the cache if the revision changed after detection
-			if (old_revision != current_project->bytecode_revision) {
-				needs_recache = true;
-			}
-		}
-	}
-	if (current_project->decompiler.is_valid()) {
-		auto new_settings = GodotMonoDecompWrapper::GodotMonoDecompSettings::get_default_settings();
-		needs_recache = needs_recache || new_settings != current_project->decompiler->get_settings();
-		if (current_project->decompiler->set_settings(new_settings) != OK) {
-			ERR_PRINT("Failed to update decompiler settings, decompiler will be reset");
-			current_project->decompiler = Ref<GodotMonoDecompWrapper>();
-			reload_dotnet_assembly(current_project->assembly_path);
-		}
-	}
-	if (GDREConfig::get_singleton()->get_setting("load_embedded_zips", true)) {
-		Error err = _load_embedded_zips();
-		needs_recache = needs_recache || err == OK;
-	}
-	if (needs_recache) {
-		load_pack_gdscript_cache(true);
-		_ensure_script_cache_complete();
-	}
-}
-
-String GDRESettings::get_recent_error_string(bool p_filter_backtraces) {
-	if (p_filter_backtraces) {
-		return String("\n").join(gdre::filter_error_backtraces(GDRESettings::get_errors()));
-	}
-	return String("\n").join(GDRESettings::get_errors());
-}
-
-void GDRESettings::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("load_project", "p_paths", "cmd_line_extract", "csharp_assembly_override"), &GDRESettings::load_project, DEFVAL(false), DEFVAL(""));
-	ClassDB::bind_method(D_METHOD("unload_project", "no_reset_ephemeral"), &GDRESettings::unload_project, DEFVAL(false));
-	ClassDB::bind_method(D_METHOD("post_load_patch_translation"), &GDRESettings::post_load_patch_translation);
-	ClassDB::bind_method(D_METHOD("needs_post_load_patch_translation"), &GDRESettings::needs_post_load_patch_translation);
-	ClassDB::bind_method(D_METHOD("get_gdre_resource_path"), &GDRESettings::get_gdre_resource_path);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_gdre_user_path"), &GDRESettings::get_gdre_user_path);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_gdre_tmp_path"), &GDRESettings::get_gdre_tmp_path);
-	ClassDB::bind_method(D_METHOD("get_encryption_key"), &GDRESettings::get_encryption_key);
-	ClassDB::bind_method(D_METHOD("get_encryption_key_string"), &GDRESettings::get_encryption_key_string);
-	ClassDB::bind_method(D_METHOD("get_required_key_size_in_bytes"), &GDRESettings::get_required_key_size_in_bytes);
-	ClassDB::bind_method(D_METHOD("is_pack_loaded"), &GDRESettings::is_pack_loaded);
-	ClassDB::bind_method(D_METHOD("_set_error_encryption", "is_encryption_error"), &GDRESettings::_set_error_encryption);
-	ClassDB::bind_method(D_METHOD("set_encryption_key_string", "key"), &GDRESettings::set_encryption_key_string);
-	ClassDB::bind_method(D_METHOD("set_encryption_key", "key"), &GDRESettings::set_encryption_key);
-	ClassDB::bind_method(D_METHOD("reset_encryption_key"), &GDRESettings::reset_encryption_key);
-	ClassDB::bind_method(D_METHOD("set_custom_decryption_script", "p_decryptor_script_path"), &GDRESettings::set_custom_decryption_script);
-	ClassDB::bind_method(D_METHOD("get_custom_decryption_script_path"), &GDRESettings::get_custom_decryption_script_path);
-	ClassDB::bind_method(D_METHOD("set_custom_decryptor", "p_decryptor"), &GDRESettings::set_custom_decryptor);
-	ClassDB::bind_method(D_METHOD("get_custom_decryptor"), &GDRESettings::get_custom_decryptor);
-	ClassDB::bind_method(D_METHOD("reset_custom_decryptor"), &GDRESettings::reset_custom_decryptor);
-	ClassDB::bind_method(D_METHOD("had_encryption_error"), &GDRESettings::had_encryption_error);
-	ClassDB::bind_method(D_METHOD("get_file_list", "filters"), &GDRESettings::get_file_list, DEFVAL(Vector<String>()));
-	ClassDB::bind_method(D_METHOD("get_file_info_array", "filters"), &GDRESettings::get_file_info_array, DEFVAL(Vector<String>()));
-	ClassDB::bind_method(D_METHOD("get_pack_type"), &GDRESettings::get_pack_type);
-	ClassDB::bind_method(D_METHOD("get_pack_path"), &GDRESettings::get_pack_path);
-	ClassDB::bind_method(D_METHOD("get_pack_info_list"), &GDRESettings::get_pack_info_list);
-	ClassDB::bind_method(D_METHOD("get_version_string"), &GDRESettings::get_version_string);
-	ClassDB::bind_method(D_METHOD("get_ver_major"), &GDRESettings::get_ver_major);
-	ClassDB::bind_method(D_METHOD("get_ver_minor"), &GDRESettings::get_ver_minor);
-	ClassDB::bind_method(D_METHOD("get_ver_rev"), &GDRESettings::get_ver_rev);
-	ClassDB::bind_method(D_METHOD("get_file_count"), &GDRESettings::get_file_count);
-	ClassDB::bind_method(D_METHOD("get_game_name"), &GDRESettings::get_game_name);
-	ClassDB::bind_method(D_METHOD("get_game_app_version"), &GDRESettings::get_game_app_version);
-	ClassDB::bind_method(D_METHOD("globalize_path", "p_path", "resource_path"), &GDRESettings::globalize_path);
-	ClassDB::bind_method(D_METHOD("localize_path", "p_path", "resource_path"), &GDRESettings::localize_path);
-	ClassDB::bind_method(D_METHOD("set_project_path", "p_path"), &GDRESettings::set_project_path);
-	ClassDB::bind_method(D_METHOD("get_project_path"), &GDRESettings::get_project_path);
-	ClassDB::bind_method(D_METHOD("open_log_file", "output_dir"), &GDRESettings::open_log_file);
-	ClassDB::bind_method(D_METHOD("get_log_file_path"), &GDRESettings::get_log_file_path);
-	ClassDB::bind_method(D_METHOD("close_log_file"), &GDRESettings::close_log_file);
-	ClassDB::bind_method(D_METHOD("get_remaps", "include_imports"), &GDRESettings::get_remaps, DEFVAL(true));
-	ClassDB::bind_method(D_METHOD("has_any_remaps"), &GDRESettings::has_any_remaps);
-	ClassDB::bind_method(D_METHOD("has_remap", "src", "dst"), &GDRESettings::has_remap);
-	ClassDB::bind_method(D_METHOD("add_remap", "src", "dst"), &GDRESettings::add_remap);
-	ClassDB::bind_method(D_METHOD("remove_remap", "src", "dst", "output_dir"), &GDRESettings::remove_remap);
-	ClassDB::bind_method(D_METHOD("get_project_setting", "p_setting", "default_value"), &GDRESettings::get_project_setting, DEFVAL(Variant()));
-	ClassDB::bind_method(D_METHOD("set_project_setting", "p_setting", "value"), &GDRESettings::set_project_setting);
-	ClassDB::bind_method(D_METHOD("has_project_setting", "p_setting"), &GDRESettings::has_project_setting);
-	ClassDB::bind_method(D_METHOD("get_project_config_path"), &GDRESettings::get_project_config_path);
-	ClassDB::bind_method(D_METHOD("get_cwd"), &GDRESettings::get_cwd);
-	ClassDB::bind_method(D_METHOD("get_import_files", "copy"), &GDRESettings::get_import_files);
-	ClassDB::bind_method(D_METHOD("has_path_loaded", "p_path"), &GDRESettings::has_path_loaded);
-	ClassDB::bind_method(D_METHOD("load_import_files"), &GDRESettings::load_import_files);
-	ClassDB::bind_method(D_METHOD("load_import_file", "p_path"), &GDRESettings::load_import_file);
-	ClassDB::bind_method(D_METHOD("get_import_info_by_source", "p_path"), &GDRESettings::get_import_info_by_source);
-	ClassDB::bind_method(D_METHOD("get_import_info_by_dest", "p_path"), &GDRESettings::get_import_info_by_dest);
-	ClassDB::bind_method(D_METHOD("get_exec_dir"), &GDRESettings::get_exec_dir);
-	ClassDB::bind_method(D_METHOD("are_imports_loaded"), &GDRESettings::are_imports_loaded);
-	ClassDB::bind_method(D_METHOD("is_project_config_loaded"), &GDRESettings::is_project_config_loaded);
-	ClassDB::bind_method(D_METHOD("is_headless"), &GDRESettings::is_headless);
-	ClassDB::bind_method(D_METHOD("get_sys_info_string"), &GDRESettings::get_sys_info_string);
-	ClassDB::bind_method(D_METHOD("load_project_config"), &GDRESettings::load_project_config);
-	ClassDB::bind_method(D_METHOD("save_project_config", "p_out_dir"), &GDRESettings::save_project_config);
-	ClassDB::bind_method(D_METHOD("save_project_config_binary", "p_out_dir"), &GDRESettings::save_project_config_binary);
-	ClassDB::bind_method(D_METHOD("pack_has_project_config"), &GDRESettings::pack_has_project_config);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_gdre_version"), &GDRESettings::get_gdre_version);
-	ClassDB::bind_method(D_METHOD("get_disclaimer_text"), &GDRESettings::get_disclaimer_text);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_home_dir"), &GDRESettings::get_home_dir);
-	ClassDB::bind_method(D_METHOD("get_errors"), &GDRESettings::get_errors);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_auto_display_scale"), &GDRESettings::get_auto_display_scale);
-	ClassDB::bind_method(D_METHOD("set_dotnet_assembly_path", "p_path"), &GDRESettings::set_dotnet_assembly_path);
-	ClassDB::bind_method(D_METHOD("get_dotnet_assembly_path"), &GDRESettings::get_dotnet_assembly_path);
-	ClassDB::bind_method(D_METHOD("get_dotnet_decompiler"), &GDRESettings::get_dotnet_decompiler);
-	ClassDB::bind_method(D_METHOD("has_loaded_dotnet_assembly"), &GDRESettings::has_loaded_dotnet_assembly);
-	ClassDB::bind_method(D_METHOD("get_project_dotnet_assembly_name"), &GDRESettings::get_project_dotnet_assembly_name);
-	ClassDB::bind_method(D_METHOD("project_requires_dotnet_assembly"), &GDRESettings::project_requires_dotnet_assembly);
-	ClassDB::bind_method(D_METHOD("get_temp_dotnet_assembly_dir"), &GDRESettings::get_temp_dotnet_assembly_dir);
-	ClassDB::bind_method(D_METHOD("update_from_ephemeral_settings"), &GDRESettings::update_from_ephemeral_settings);
-	ClassDB::bind_method(D_METHOD("get_recent_error_string", "filter_backtraces"), &GDRESettings::get_recent_error_string, DEFVAL(true));
-	ClassDB::bind_method(D_METHOD("load_translation_key_hint_file", "p_path"), &GDRESettings::load_translation_key_hint_file);
-	ClassDB::bind_method(D_METHOD("add_pack_info", "p_pack_info"), &GDRESettings::add_pack_info);
-
-	ClassDB::bind_method(D_METHOD("add_custom_pack_source_script", "p_script_path"), &GDRESettings::add_custom_pack_source_script);
-	ClassDB::bind_method(D_METHOD("clear_custom_pack_source_script"), &GDRESettings::clear_custom_pack_source_script);
-}
-
-// This is at the bottom to account for the platform header files pulling in their respective OS headers and creating all sorts of issues
-
-#ifdef WINDOWS_ENABLED
-#include "platform/windows/os_windows.h"
-#include "platform/windows/windows_terminal_logger.h"
-#define PLATFORM_OS OS_Windows
-#define STDOUT_LOGGER WindowsTerminalLogger
-#endif
-#ifdef LINUXBSD_ENABLED
-#include "drivers/unix/os_unix.h"
-#include "platform/linuxbsd/os_linuxbsd.h"
-#define PLATFORM_OS OS_LinuxBSD
-#define STDOUT_LOGGER UnixTerminalLogger
-#endif
-#ifdef MACOS_ENABLED
-#include "drivers/unix/os_unix.h"
-#define PLATFORM_OS OS_Unix
-#define STDOUT_LOGGER UnixTerminalLogger
-#endif
-#ifdef WEB_ENABLED
-#include "core/io/logger.h"
-#include "platform/web/os_web.h"
-#define PLATFORM_OS OS_Web
-#define STDOUT_LOGGER StdLogger
-#endif
-#ifdef ANDROID_ENABLED
-#include "platform/android/os_android.h"
-#include <android/log.h>
-#define PLATFORM_OS OS_Android
-class GDREAndroidLogger : public Logger {
-public:
-	virtual void logv(const char *p_format, va_list p_list, bool p_err) {
-		__android_log_vprint(p_err ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "godot", p_format, p_list);
-	}
-
-	virtual ~GDREAndroidLogger() {}
-};
-#define STDOUT_LOGGER GDREAndroidLogger
-#endif
-#ifdef IPHONE_ENABLED
-#include "platform/ios/ios_terminal_logger.h"
-#include "platform/ios/os_ios.h"
-#define PLATFORM_OS OS_IOS
-#define STDOUT_LOGGER IOSTerminalLogger
-#endif
-template <class T>
-class GDREOS : public T {
-	static_assert(std::is_base_of<OS, T>::value, "T must derive from OS");
-
-public:
-	static void do_add_logger(GDREOS<T> *ptr, Logger *p_logger) {
-		ptr->add_logger(p_logger);
-	}
-	static void do_set_logger(GDREOS<T> *ptr, CompositeLogger *p_logger) {
-		ptr->_set_logger(p_logger);
-	}
-};
-
-void GDRESettings::add_logger() {
-#ifdef WINDOWS_ENABLED
-    GDREOS<OS_Windows> *_gdre_os = reinterpret_cast<GDREOS<OS_Windows> *>(os_singleton);
-    // অথবা উইন্ডোজ বা ম্যাকওএস চেক অনুযায়ী সঠিক ম্যাক্রো ব্যবহার করা
-#elif defined(APPLE_ENABLED) || defined(IOS_ENABLED) || defined(MACOS_ENABLED)
-    // iOS বা macOS এর জন্য ডিফল্ট বা সঠিক ওএস টাইপ কাস্ট ব্যবহার করুন
-    // যদি প্ল্যাটফর্ম স্পেসিফিক ক্লাস না থাকে, তবে স্ট্যান্ডার্ড ওএস পয়েন্টার ব্যবহার করা নিরাপদ:
-    OS *(_gdre_os) = os_singleton;
-#else
-    GDREOS<PLATFORM_OS> *_gdre_os = reinterpret_cast<GDREOS<PLATFORM_OS> *>(os_singleton);
-#endif
-
-    // STDOUT_LOGGER যদি iOS-এ ডিক্লেয়ার করা না থাকে, তবে স্ট্যান্ডার্ড প্রিন্টার বা সেফ চেকিং দিন
-#if defined(IOS_ENABLED)
-    // iOS-এর ক্ষেত্রে কনসোল বা স্ট্যান্ডার্ড আউটপুট লগার বাইপাস করা
-    print_line("GDRESettings: Logger initialized for iOS.");
-#else
-    STDOUT_LOGGER *stdout_logger = memnew(STDOUT_LOGGER);
-    // বাকি অংশ যেমন ছিল...
-#endif
-}
-
-
-void GDRESettings::_set_shader_globals() {
-	if (is_project_config_loaded() && ProjectSettings::get_singleton()) {
-		Dictionary globals = current_project->pcfg->get_section("shader_globals");
-		if (!globals.is_empty()) {
-			for (const auto &E : globals) {
-				String key = "shader_globals/" + String(E.key);
-				ProjectSettings::get_singleton()->set_setting(key, E.value);
-			}
-
-			// We need to make the ResourceCompatLoader globally available to load any texture parameters
-			bool previous = ResourceCompatLoader::is_globally_available();
-			if (!previous) {
-				ResourceCompatLoader::make_globally_available();
-			}
-			if (RenderingServer::get_singleton()) {
-				RenderingServer::get_singleton()->global_shader_parameters_load_settings(true);
-			}
-
-			for (const auto &E : globals) {
-				String key = String(E.key);
-				Dictionary d = E.value;
-
-				ERR_CONTINUE(!d.has("type"));
-				ERR_CONTINUE(!d.has("value"));
-
-				String type = d["type"];
-
-				static const char *global_var_type_names[RSE::GLOBAL_VAR_TYPE_MAX] = {
-					"bool",
-					"bvec2",
-					"bvec3",
-					"bvec4",
-					"int",
-					"ivec2",
-					"ivec3",
-					"ivec4",
-					"rect2i",
-					"uint",
-					"uvec2",
-					"uvec3",
-					"uvec4",
-					"float",
-					"vec2",
-					"vec3",
-					"vec4",
-					"color",
-					"rect2",
-					"mat2",
-					"mat3",
-					"mat4",
-					"transform_2d",
-					"transform",
-					"sampler2D",
-					"sampler2DArray",
-					"sampler3D",
-					"samplerCube",
-					"samplerExternalOES",
-				};
-
-				RSE::GlobalShaderParameterType gvtype = RSE::GLOBAL_VAR_TYPE_MAX;
-
-				for (int i = 0; i < RSE::GLOBAL_VAR_TYPE_MAX; i++) {
-					if (global_var_type_names[i] == type) {
-						gvtype = RSE::GlobalShaderParameterType(i);
-						break;
-					}
-				}
-
-				ERR_CONTINUE(gvtype == RSE::GLOBAL_VAR_TYPE_MAX); //type invalid
-
-				Variant value = d["value"];
-
-				if (gvtype >= RSE::GLOBAL_VAR_TYPE_SAMPLER2D) {
-					String path = value;
-					// Don't load the textures, but still add the parameter so shaders compile correctly while loading.
-					if (path.is_empty()) {
-						value = Ref<Resource>();
-					} else {
-						Ref<Resource> resource = ResourceLoader::load(path);
-						value = resource;
-					}
-				}
-				shader_globals[key] = value;
-			}
-
-			if (!previous) {
-				ResourceCompatLoader::unmake_globally_available();
-			}
-		}
-	}
-}
-
-void GDRESettings::_clear_shader_globals() {
-	if (is_project_config_loaded() && ProjectSettings::get_singleton()) {
-		Dictionary globals = current_project->pcfg->get_section("shader_globals");
-		if (!globals.is_empty()) {
-			for (const auto &E : globals) {
-				String key = "shader_globals/" + String(E.key);
-				if (ProjectSettings::get_singleton()->has_setting(key)) {
-					ProjectSettings::get_singleton()->clear(key);
-				}
-			}
-			if (RenderingServer::get_singleton()) {
-				RenderingServer::get_singleton()->global_shader_parameters_load_settings(true);
-			}
-		}
-	}
-	shader_globals.clear();
-}
-
-Variant GDRESettings::get_shader_global(const String &p_name) const {
-	if (!shader_globals.has(p_name)) {
-		return Variant();
-	}
-	return shader_globals.get(p_name);
-}
-
-namespace {
-struct ODBDLoadTask {
-	Vector<String> paths;
-	Mutex global_lock;
-	HashSet<String> base_extensions_set;
-	ParallelFlatHashSet<String> resource_paths;
-	struct ResToSet {
-		Vector<uint8_t> data;
-		String path;
-		String new_path;
-	};
-	Vector<ResToSet> res_to_set;
-	int ver_major = 0;
-	int ver_minor = 0;
-
-	void _find_resources(const String &path, const Variant &p_variant, bool p_main, HashSet<Ref<Resource>> &external_resources, HashSet<Ref<Resource>> &resource_set) {
-		switch (p_variant.get_type()) {
-			case Variant::OBJECT: {
-				Ref<Resource> res = p_variant;
-				if (res.is_null() || !CompatFormatLoader::resource_is_resource(res, ver_major) || external_resources.has(res) || res->get_meta(SNAME("_skip_save_"), false)) {
-					return;
-				}
-				if (!p_main && !res->is_built_in()) {
-					if (res->get_path() == path) {
-						ERR_PRINT(vformat("Circular reference to resource being saved found: '%s' will be null next time it's loaded.", path));
-						return;
-					}
-					external_resources.insert(res);
-					return;
-				}
-				if (resource_set.has(res)) {
-					return;
-				}
-				resource_set.insert(res);
-				List<PropertyInfo> property_list;
-				res->get_property_list(&property_list);
-				for (const PropertyInfo &E : property_list) {
-					if (E.usage & PROPERTY_USAGE_STORAGE) {
-						Variant value = res->get(E.name);
-						_find_resources(path, value, false, external_resources, resource_set);
-					}
-				}
-
-				// COMPAT: get the missing resources too
-				Dictionary missing_resources = res->get_meta(META_MISSING_RESOURCES, Dictionary());
-				if (missing_resources.size()) {
-					LocalVector<Variant> keys = missing_resources.get_key_list();
-					for (Variant key : keys) {
-						_find_resources(path, missing_resources[key], false, external_resources, resource_set);
-					}
-				}
-
-			} break;
-
-			case Variant::ARRAY: {
-				Array varray = p_variant;
-				_find_resources(path, varray.get_typed_script(), false, external_resources, resource_set);
-				for (const Variant &v : varray) {
-					_find_resources(path, v, false, external_resources, resource_set);
-				}
-			} break;
-			case Variant::DICTIONARY: {
-				Dictionary d = p_variant;
-				_find_resources(path, d.get_typed_key_script(), false, external_resources, resource_set);
-				_find_resources(path, d.get_typed_value_script(), false, external_resources, resource_set);
-				for (const KeyValue<Variant, Variant> &kv : d) {
-					_find_resources(path, kv.key, false, external_resources, resource_set);
-					_find_resources(path, kv.value, false, external_resources, resource_set);
-				}
-			} break;
-			default: {
-			}
-		}
-	}
-	void _do_obdb_load(uint32_t i, void *p_userdata) {
-		String packed_path = paths[i];
-		Ref<Resource> packed_resource = ResourceCompatLoader::fake_load(packed_path);
-		if (packed_resource.is_valid()) {
-			HashSet<Ref<Resource>> external_resources;
-			HashSet<Ref<Resource>> resource_set;
-			_find_resources(packed_path, packed_resource, true, external_resources, resource_set);
-			for (const Ref<Resource> &resource : external_resources) {
-				if (resource_paths.emplace(resource->get_path()).second) {
-					String path = resource->get_path();
-					if (FileAccess::exists(path)) {
-						continue;
-					}
-					Ref<MissingResource> missing_resource = resource;
-					if (missing_resource.is_valid()) {
-						if (missing_resource->get_original_class() == "Texture") {
-							missing_resource->set_original_class("ImageTexture");
-						}
-					}
-					String ext = path.get_extension().to_lower();
-					String base_ext = ext;
-					if (ext.begins_with("x") && ext != "xml") {
-						base_ext = ext.substr(1);
-					}
-					String new_path = path;
-					Vector<uint8_t> data;
-					if (base_ext == "nut") {
-						String source = resource->get("script/source");
-						if (source.is_empty()) {
-							ERR_CONTINUE_MSG(source.is_empty(), vformat("Resource %s has no script source", path));
-						}
-						data = source.to_utf8_buffer();
-					} else if (base_ext == "spx") {
-						Dictionary bundled = resource->get("_bundled");
-						data = bundled.get("data", Vector<uint8_t>());
-						if (data.is_empty()) {
-							ERR_CONTINUE_MSG(data.is_empty(), vformat("Resource %s has no bundled data", path));
-						}
-					} else {
-						Ref<FileAccessBuffer> file_access = FileAccessBuffer::create();
-
-						if (!base_extensions_set.has(base_ext)) {
-							Vector<String> base_extensions = ResourceCompatLoader::get_base_extension_set_for_type(resource->get_save_class(), 1);
-							if (base_extensions.is_empty()) {
-								ERR_CONTINUE_MSG(base_extensions.is_empty(), vformat("No base extensions found for resource %s of type: %s", path, resource->get_class()));
-							}
-							new_path = path + ".converted." + base_extensions[0];
-						}
-						Ref<FileAccess> fa = file_access;
-						Error err = ResourceCompatLoader::save_custom_to_file(resource, new_path, fa, ver_major, ver_minor, 0);
-						if (err != OK) {
-							ERR_CONTINUE_MSG(err, vformat("Failed to save resource %s to file %s", path, new_path));
-						}
-						data = file_access->get_data();
-					}
-					{
-						MutexLock lock(global_lock);
-						res_to_set.push_back({ data, path, new_path });
-					}
-				}
-			}
-		}
-	}
-
-	String get_description(uint32_t i, void *p_userdata) {
-		return vformat("Loading resource: %s", paths[i]);
-	}
-};
-} //namespace
-
-Error GDRESettings::_load_obdb_resources() {
-	// gather all the files that have `.optimized.scn` or `.optimized.res` extensions
-	ODBDLoadTask task;
-	static const Vector<String> optimized_extensions = { "*.optimized.scn", "*.optimized.res" };
-	task.paths = get_file_list(optimized_extensions);
-	if (task.paths.is_empty()) {
-		return OK;
-	}
-
-	task.ver_major = get_ver_major();
-	task.ver_minor = get_ver_minor();
-
-	List<String> base_extensions;
-	ResourceCompatLoader::get_base_extensions(&base_extensions, 1);
-	task.base_extensions_set = { "xml", "xres", "xscn" };
-	for (const String &ext : base_extensions) {
-		task.base_extensions_set.insert(ext);
-	}
-	Error err = TaskManager::get_singleton()->run_multithreaded_group_task(
-			&task,
-			&ODBDLoadTask::_do_obdb_load,
-			task.paths.ptrw(),
-			task.paths.size(),
-			&ODBDLoadTask::get_description,
-			"GDRESettings::_load_obdb_resources",
-			RTR("Loading packed OBDB resources..."),
-			false);
-	if (err != OK) {
-		return err;
-	}
-
-	for (const auto &res_to_set : task.res_to_set) {
-		if (res_to_set.path != res_to_set.new_path) {
-			GDRESettings::get_singleton()->add_remap(res_to_set.path, res_to_set.new_path);
-		}
-		GDREPackedData::get_singleton()->add_dummy_path("OBDBPackedResources", res_to_set.new_path, res_to_set.data);
-	}
-	HashSet<String> remaps = gdre::vector_to_hashset((Vector<String>)get_project_setting(v2_remap_setting, Vector<String>()));
-	for (const String &path : task.paths) {
-		if (!remaps.has(path)) {
-			String new_path = path.get_basename().get_basename() + ".xml";
-			add_remap(new_path, path);
-		}
-	}
-
-	return err;
 }
