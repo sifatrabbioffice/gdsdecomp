@@ -19,14 +19,23 @@ jobs:
         run: |
           brew install cmake ninja
 
-      - name: Configure CMake for iOS Target
+      - name: Locate CMake and Configure
         run: |
-          cmake -B build-ios -G Ninja \
+          CMAKE_PATH=$(find . -maxdepth 3 -name "CMakeLists.txt" -not -path "*/.*" | head -n 1)
+          if [ -z "$CMAKE_PATH" ]; then
+            echo "Error: CMakeLists.txt khunje pawa jayni!"
+            echo "Directory contents:"
+            ls -la
+            exit 1
+          fi
+          SRC_DIR=$(dirname "$CMAKE_PATH")
+          echo "Found CMakeLists.txt in: $SRC_DIR"
+
+          cmake -S "$SRC_DIR" -B build-ios -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES="arm64" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_METAL=ON
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Build Executable
         run: |
@@ -35,7 +44,13 @@ jobs:
       - name: Package .app to .ipa
         run: |
           mkdir -p Payload
-          cp -r build-ios/GDRecomp.app Payload/
+          APP_PATH=$(find build-ios -name "*.app" -type d | head -n 1)
+          if [ -n "$APP_PATH" ]; then
+            cp -r "$APP_PATH" Payload/
+          else
+            mkdir -p Payload/GDRecomp.app
+            find build-ios -maxdepth 2 -type f -executable -exec cp {} Payload/GDRecomp.app/ \;
+          fi
           zip -r GDRecomp-iOS.ipa Payload
 
       - name: Upload Artifact
