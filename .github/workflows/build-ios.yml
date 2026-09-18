@@ -1,0 +1,45 @@
+name: Build GDRecomp iOS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Tools
+        run: |
+          brew install cmake ninja
+
+      - name: Configure CMake for iOS Target
+        run: |
+          cmake -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_METAL=ON
+
+      - name: Build Executable
+        run: |
+          cmake --build build-ios --config Release
+
+      - name: Package .app to .ipa
+        run: |
+          mkdir -p Payload
+          cp -r build-ios/GDRecomp.app Payload/
+          zip -r GDRecomp-iOS.ipa Payload
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GDRecomp-iOS-IPA
+          path: GDRecomp-iOS.ipa
