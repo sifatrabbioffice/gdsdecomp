@@ -104,7 +104,7 @@ jobs:
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
           - name: "📱 iOS Template Release (Metal/Unsigned IPA)"
-            os: "macos-14"
+            os: "macos-latest"
             id: ios-template
             platform: ios
             target: template_release
