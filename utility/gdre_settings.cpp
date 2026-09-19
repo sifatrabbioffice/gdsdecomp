@@ -3355,17 +3355,14 @@ void GDRESettings::add_logger() {
 	GDREOS<PLATFORM_OS>::do_set_logger(_gdre_os, memnew(CompositeLogger(loggers)));
 	// GDREOS<PLATFORM_OS>::do_add_logger(_gdre_os, logger);
 #else
-	// iOS বা অন্যান্য প্ল্যাটফর্মে যেখানে PLATFORM_OS বা STDOUT_LOGGER সরাসরি কাজ করে না
+	// iOS এবং অন্যান্য প্ল্যাটফর্মে যেখানে PLATFORM_OS বা STDOUT_LOGGER সরাসরি নেই
 	print_line("GDRESettings: Logger initialized for platform: " + os_name);
-	STDOUT_LOGGER *stdout_logger = memnew(STDOUT_LOGGER);
-	GDRELogger::set_stdout_logger(stdout_logger);
-	
 	Vector<Logger *> loggers;
 	loggers.push_back(logger);
-	// iOS বা অন্যান্য প্ল্যাটফর্মের জন্য সরাসরি OS ক্লাস পয়েন্টার ব্যবহার করা
-	// অথবা যদি do_set_logger প্রয়োজন না হয়, তবে শুধু স্ট্যান্ডার্ড লগার সেট করা নিরাপদ।
+	GDRELogger::set_stdout_logger(nullptr);
 #endif
 }
+
 
 
 void GDRESettings::_set_shader_globals() {
